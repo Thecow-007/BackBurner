@@ -1,0 +1,7 @@
+# Normalize all text to LF in the repository; working copies may check out CRLF on Windows.
+* text=auto eol=lf
+
+# Binary assets
+*.pdf binary
+*.png binary
+*.ico binary
