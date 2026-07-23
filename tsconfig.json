@@ -1,0 +1,14 @@
+// Build-mode orchestrator (`tsc -b`). Not extended by anything and does not
+// extend tsconfig.base.json itself — it only lists the workspace projects and
+// their dependency edges, so `tsc -b` builds/typechecks them in dependency
+// order and can resolve @backburner/engine's declarations for
+// @backburner/api without a manual build step first. See the "TypeScript
+// typecheck strategy" choice called out in the Phase 0 report.
+{
+  "files": [],
+  "references": [
+    { "path": "packages/engine" },
+    { "path": "packages/api" },
+    { "path": "packages/web" }
+  ]
+}

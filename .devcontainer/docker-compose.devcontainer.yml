@@ -1,0 +1,14 @@
+# Adds the devcontainer's own service on top of the root docker-compose.yml
+# (docs/architecture.md §3, docs/deployment.md §7). `postgres` is defined
+# there; naming it explicitly in devcontainer.json's "runServices" starts it
+# regardless of its "dev"/"prod" profile membership.
+services:
+  devcontainer:
+    image: mcr.microsoft.com/devcontainers/typescript-node:22
+    volumes:
+      - ..:/workspaces/BackBurner:cached
+    command: sleep infinity
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/backburner_dev

@@ -1,0 +1,19 @@
+{
+  "name": "BackBurner",
+  "dockerComposeFile": [
+    "../docker-compose.yml",
+    "docker-compose.devcontainer.yml"
+  ],
+  "service": "devcontainer",
+  "workspaceFolder": "/workspaces/BackBurner",
+  "runServices": ["postgres", "devcontainer"],
+  "shutdownAction": "stopCompose",
+  "forwardPorts": [3000, 5432],
+  "postCreateCommand": "npm ci",
+  "remoteUser": "node",
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
+    }
+  }
+}

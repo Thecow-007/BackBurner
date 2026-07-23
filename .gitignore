@@ -7,6 +7,10 @@
 node_modules/
 dist/
 coverage/
+*.tsbuildinfo
+
+# e2e harness server logs (test-plan.md §3.1)
+packages/e2e/.logs/
 
 # Environment & secrets
 .env

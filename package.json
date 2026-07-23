@@ -1,0 +1,27 @@
+{
+  "name": "backburner",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -b tsconfig.json",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "npm run test --workspace=@backburner/engine",
+    "test:e2e": "node scripts/run-e2e.mjs",
+    "test:criteria": "npm run test:criteria --workspace=@backburner/e2e",
+    "test:supplemental": "npm run test:supplemental --workspace=@backburner/e2e",
+    "migrate": "node scripts/migrate.mjs",
+    "seed": "node scripts/seed.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^5.9.3"
+  }
+}

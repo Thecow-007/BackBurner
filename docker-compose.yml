@@ -1,0 +1,60 @@
+# BackBurner — one compose file, two profiles (docs/architecture.md §3,
+# docs/deployment.md §1-2). Reused, unmodified, by the devcontainer
+# (.devcontainer/) and the production server.
+#
+#   dev  profile — postgres:18 only, for local development and the test suites.
+#   prod profile — app + postgres:18, restart: unless-stopped, for the server.
+#
+# Nothing secret lives here. Production runtime configuration (per
+# docs/architecture.md §13) is supplied by a server-side .env file — see
+# .env.example — never committed.
+
+services:
+  # No "profiles" key: compose treats a service with no profiles attribute as
+  # always enabled, under *any* --profile flag (or none at all). That's what
+  # lets `--profile dev` and `--profile prod` both bring postgres up, and lets
+  # the devcontainer (which invokes compose with no --profile flag — see
+  # .devcontainer/docker-compose.devcontainer.yml) start it too: a service
+  # explicitly gated to profiles ["dev","prod"] would leave `depends_on:
+  # postgres` unresolved for anyone who invokes compose without naming a
+  # profile, which is exactly the devcontainer's case.
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      # postgres:18+ images store data under major-version-specific
+      # subdirectories (pg_ctlcluster-style) and expect the volume mounted at
+      # the parent /var/lib/postgresql, not /var/lib/postgresql/data directly
+      # — mounting at .../data errors out on this image. See
+      # https://github.com/docker-library/postgres/pull/1259.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # TODO(Phase 6): no Dockerfile exists yet (docs/deployment.md §2 — multi-stage
+  # build on Node 22, added in Phase 6). `build: .` is wired ahead of time so
+  # the prod profile's shape is final now; it is never invoked by
+  # `docker compose --profile dev up -d`, which does not touch this service.
+  app:
+    profiles: ["prod"]
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/backburner
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
