@@ -1,0 +1,144 @@
+/**
+ * Public types for @backburner/engine — docs/architecture.md §2, §8;
+ * docs/api-contract.md §4. This file is the source of truth for the shapes
+ * re-exported from index.ts; nothing here reaches into HTTP concerns.
+ */
+import type { Pool } from "pg";
+
+export interface Job {
+  handle: string;
+  lane: string;
+  params: Record<string, unknown>;
+}
+
+export interface WorkerResult {
+  status: "ready" | "failed";
+  result?: unknown;
+  error?: { reason: string; retryable: boolean };
+}
+
+export interface WorkerContext {
+  signal: AbortSignal;
+}
+
+export type Worker = (job: Job, ctx: WorkerContext) => Promise<WorkerResult>;
+
+export interface LaneConfig {
+  worker: Worker;
+  defaults?: { maxAttempts?: number };
+}
+
+export interface BackoffOptions {
+  baseMs?: number;
+  rng?: () => number;
+}
+
+export interface EngineOptions {
+  pool?: Pool;
+  connectionString?: string;
+  concurrency: number;
+  lanes: Record<string, LaneConfig>;
+  backoff?: BackoffOptions;
+  /**
+   * [ADDITIVE — see final report item (d)] Default drain window (ms) for
+   * `stop({ drain: true })` when the call site doesn't override it —
+   * architecture §13's `DRAIN_TIMEOUT_MS` (default 30000). The engine
+   * never reads `process.env` itself; the caller reads `DRAIN_TIMEOUT_MS`
+   * and passes it through here (or per-call via `stop()`'s own opts).
+   */
+  drainTimeoutMs?: number;
+}
+
+export type TaskStatus = "queued" | "running" | "ready" | "failed" | "cancelled";
+
+export interface TaskObject {
+  handle: string;
+  lane: string;
+  params: Record<string, unknown>;
+  status: TaskStatus;
+  result: unknown | null;
+  error: { reason: string; retryable: boolean } | null;
+  created_at: string;
+  updated_at: string;
+  collected: boolean;
+  id: string;
+  attempts: number;
+  max_attempts: number;
+  seeded: boolean;
+}
+
+export interface ListFilters {
+  status?: string;
+  lane?: string;
+  from?: string;
+  to?: string;
+  sort?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface HistoryTransition {
+  event_type: string;
+  from_status: TaskStatus | null;
+  to_status: TaskStatus | null;
+  at: string;
+  meta: Record<string, unknown>;
+}
+
+export interface Engine {
+  start(): Promise<void>;
+  stop(opts?: { drain?: boolean; drainTimeoutMs?: number }): Promise<void>;
+  submit(
+    userId: string,
+    lane: string,
+    params: Record<string, unknown>,
+    opts?: { maxAttempts?: number }
+  ): Promise<TaskObject>;
+  list(
+    userId: string,
+    filters: ListFilters
+  ): Promise<{ tasks: TaskObject[]; as_of: number; next_cursor: string | null }>;
+  get(userId: string, ref: { handle: string } | { id: string }): Promise<TaskObject>;
+  collect(userId: string, handle: string): Promise<TaskObject>;
+  cancel(userId: string, handle: string): Promise<TaskObject>;
+  retry(userId: string, handle: string): Promise<TaskObject>;
+  history(userId: string, taskId: string): Promise<{ transitions: HistoryTransition[] }>;
+  subscribe(userId: string, sinceId?: number): AsyncIterable<{ id: number; event: Record<string, unknown> }>;
+  latestEventId(userId: string): Promise<number>;
+}
+
+/**
+ * Internal row shape as returned by `SELECT * FROM tasks` (snake_case
+ * columns, pg's native JS types). Not part of the public surface — the
+ * serializer maps this to TaskObject.
+ */
+export interface TaskRow {
+  id: string;
+  user_id: string;
+  lane: string;
+  handle_num: number;
+  params: Record<string, unknown>;
+  status: TaskStatus;
+  result: unknown | null;
+  error: { reason: string; retryable: boolean } | null;
+  attempts: number;
+  max_attempts: number;
+  collected: boolean;
+  seeded: boolean;
+  enqueued_at: Date;
+  run_after: Date | null;
+  started_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface TransitionRow {
+  id: string | number; // bigint arrives as string from pg
+  task_id: string;
+  user_id: string;
+  event_type: string;
+  from_status: TaskStatus | null;
+  to_status: TaskStatus | null;
+  at: Date;
+  meta: Record<string, unknown>;
+}

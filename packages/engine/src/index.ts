@@ -1,11 +1,22 @@
 /**
- * @backburner/engine — orchestration core (Phase 0 stub).
- *
- * This package will own handle allocation, the task state machine, dispatch,
- * the worker pool, retries, recovery, and the event log — see
- * docs/architecture.md. It has no HTTP dependencies and depends only on `pg`.
- *
- * No engine logic exists yet. Phase 2 (docs/build-plan.md) fills this in with
- * `createEngine(...)` and the public surface documented in architecture.md §2.
+ * @backburner/engine — public surface. docs/architecture.md §2. This is
+ * the ONLY module @backburner/api may import from this package.
  */
-export const ENGINE_PACKAGE_NAME = "@backburner/engine";
+export { createEngine } from "./engine.js";
+export { InvalidStateError, NotFoundError, UnknownLaneError, ValidationError } from "./errors.js";
+export { createMockWorker, normalizeMockParams, randomDurationMs } from "./worker.js";
+
+export type {
+  BackoffOptions,
+  Engine,
+  EngineOptions,
+  HistoryTransition,
+  Job,
+  LaneConfig,
+  ListFilters,
+  TaskObject,
+  TaskStatus,
+  Worker,
+  WorkerContext,
+  WorkerResult,
+} from "./types.js";

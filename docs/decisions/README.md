@@ -25,3 +25,5 @@ Where a record extends or resolves an ambiguity in the assessment spec ([`docs/a
 | [0013](0013-failed-tasks-are-collectable.md) | Failed tasks are collectable | Accepted |
 | [0014](0014-typescript-project-references-build-typecheck.md) | TypeScript project references for build and typecheck | Accepted |
 | [0015](0015-e2e-harness-additive-helpers.md) | Additive e2e harness helpers beyond the test-plan surface | Accepted |
+| [0016](0016-single-schema-migration.md) | One migration creates the full shared schema | Accepted |
+| [0017](0017-mock-params-normalized-by-caller.md) | Mock-worker param defaults filled by the caller, not the engine core | Accepted |
