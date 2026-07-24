@@ -10,18 +10,13 @@
   "shutdownAction": "stopCompose",
   "forwardPorts": [3000, 5432],
   "postCreateCommand": "npm ci",
-  // The typescript-node image ships a `node` user but no `vscode` user, and
-  // GitHub Codespaces provisions its agent/SSH as `vscode` — a missing vscode
-  // user makes container creation fail into a recovery container. common-utils
-  // creates the user Codespaces expects; Node 22 stays baked into the image.
+  // base:ubuntu ships a native `vscode` user (what Codespaces provisions its
+  // agent as), and the node feature installs Node 22 system-wide so it is on
+  // PATH for that user — the typescript-node image kept Node under its own
+  // `node` user's nvm profile, unreachable once Codespaces forced `vscode`.
   "features": {
-    "ghcr.io/devcontainers/features/common-utils:2": {
-      "installZsh": false,
-      "installOhMyZsh": false,
-      "username": "vscode",
-      "userUid": "1001",
-      "userGid": "1001",
-      "upgradePackages": false
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
     }
   },
   "remoteUser": "vscode",

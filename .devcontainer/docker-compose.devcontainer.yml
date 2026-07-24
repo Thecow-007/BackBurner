@@ -3,8 +3,18 @@
 # there; naming it explicitly in devcontainer.json's "runServices" starts it
 # regardless of its "dev"/"prod" profile membership.
 services:
+  # Only in the devcontainer (dev/Codespaces) — never prod or the local root
+  # compose: have Postgres create the dev database on first volume init so
+  # `npm run migrate` works out of the box. POSTGRES_DB merges with the root
+  # service's POSTGRES_PASSWORD and takes effect only on a fresh data volume.
+  postgres:
+    environment:
+      POSTGRES_DB: backburner_dev
+
   devcontainer:
-    image: mcr.microsoft.com/devcontainers/typescript-node:22
+    # base:ubuntu has a native vscode user; Node arrives via the node feature
+    # in devcontainer.json (installed system-wide, on PATH for vscode).
+    image: mcr.microsoft.com/devcontainers/base:ubuntu
     volumes:
       - ..:/workspaces/BackBurner:cached
     command: sleep infinity
