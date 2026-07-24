@@ -17,6 +17,11 @@
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
       "version": "22"
+    },
+    // base:ubuntu ships no SSH server; Codespaces (and `gh codespace ssh`)
+    // need one in the container to connect.
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
     }
   },
   "remoteUser": "vscode",
