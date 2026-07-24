@@ -15,8 +15,10 @@ services:
     # base:ubuntu has a native vscode user; Node arrives via the node feature
     # in devcontainer.json (installed system-wide, on PATH for vscode).
     image: mcr.microsoft.com/devcontainers/base:ubuntu
-    volumes:
-      - ..:/workspaces/BackBurner:cached
+    # No explicit workspace mount: Codespaces injects its own bind of the repo
+    # at /workspaces/BackBurner, and adding our own nested mount at the same
+    # path is what dropped creation into a recovery container. The dev-container
+    # tooling provides the workspace mount from `workspaceFolder`.
     command: sleep infinity
     depends_on:
       - postgres
