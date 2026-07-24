@@ -24,3 +24,4 @@ Where a record extends or resolves an ambiguity in the assessment spec ([`docs/a
 | [0012](0012-npm-workspaces-module-boundary.md) | npm workspaces as the module boundary | Accepted |
 | [0013](0013-failed-tasks-are-collectable.md) | Failed tasks are collectable | Accepted |
 | [0014](0014-typescript-project-references-build-typecheck.md) | TypeScript project references for build and typecheck | Accepted |
+| [0015](0015-e2e-harness-additive-helpers.md) | Additive e2e harness helpers beyond the test-plan surface | Accepted |

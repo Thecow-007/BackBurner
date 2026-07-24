@@ -1,0 +1,19 @@
+{
+  "name": "@backburner/e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:criteria": "vitest run test/criteria --passWithNoTests",
+    "test:supplemental": "vitest run test/suites --passWithNoTests"
+  },
+  "devDependencies": {
+    "pg": "^8.22.0",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "eventsource": "^4.1.0"
+  }
+}

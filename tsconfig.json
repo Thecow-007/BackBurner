@@ -9,6 +9,7 @@
   "references": [
     { "path": "packages/engine" },
     { "path": "packages/api" },
-    { "path": "packages/web" }
+    { "path": "packages/web" },
+    { "path": "packages/e2e" }
   ]
 }

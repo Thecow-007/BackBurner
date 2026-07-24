@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    // e2e is a test-only package: both src/ (harness) and test/ (suites) are
+    // typechecked, so rootDir spans the package root rather than src/. Nothing
+    // here is ever consumed as a build artifact — dist/ is a typecheck
+    // by-product only (see the tsc -b note in the root tsconfig.json).
+    "rootDir": "."
+  },
+  "include": ["src", "test"]
+}
