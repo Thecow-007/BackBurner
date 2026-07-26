@@ -1,0 +1,109 @@
+/*
+ * Mobile task card — design 5c, docs/ui-spec.md §3.4.
+ *
+ * Every colour is var(--token); theme/tokens.css is the only file in the SPA
+ * where a literal may appear.
+ */
+
+.card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  padding: var(--s-5) var(--s-7);
+  border-bottom: 1px solid var(--line-quiet);
+  /* Reserve the rail's width on every card so a status change does not shift
+   * the text sideways when a row becomes live. */
+  border-left: 3px solid transparent;
+}
+
+/* Live rows: the blue rail and the faint wash (ui-spec §3.4). */
+.live {
+  border-left-color: var(--live-rail);
+  background: var(--live-wash);
+}
+
+.selected {
+  background: var(--bg-raised);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+.handle {
+  font-family: var(--font-mono);
+  /* 15px: the design's card handle sits between --fs-row-handle and the detail
+   * header; no --fs-* token lands on that step. */
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* The stretched link — the whole card navigates, while the action stays a real
+ * button rather than interactive content nested inside an anchor. */
+.handle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: -2px;
+}
+
+.note {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  line-height: 1.5;
+  color: var(--text-dim);
+  /* The full reason wraps rather than truncating — an error is never cut
+   * short (ui-spec §0, §3.12). */
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  color: var(--text-dim);
+}
+
+.sep {
+  color: var(--text-quiet);
+  padding: 0 var(--s-1);
+}
+
+/* Elapsed / waiting time, tinted with the live status colour. */
+.elapsed {
+  color: var(--st-running);
+}
+
+.stateNote {
+  color: var(--text-dim);
+}
+
+.reason {
+  color: var(--text-error);
+}
+
+/* The action button must clear the 44px touch minimum and stay above the
+ * stretched link (ui-spec §4). */
+.card > button {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  min-height: var(--tap);
+}

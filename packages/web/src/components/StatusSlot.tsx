@@ -23,13 +23,18 @@ export interface StatusSlotProps {
    *  history is loaded. Omitted elsewhere — the note drops the clause rather
    *  than inventing a time. */
   collectedAt?: string;
+  /** The `ready`/`failed` transition's timestamp — when the work actually
+   *  finished. Passed by the detail screen when history is loaded, so a
+   *  collected task's total does not grow by the time an operator took to
+   *  collect it. */
+  completedAt?: string;
   /** The action bar. When the task is terminal the slot renders the terminal
    *  note from `durationReadout()` instead, and ignores this. */
   actions?: ReactNode;
 }
 
-export function StatusSlot({ task, collectedAt, actions }: StatusSlotProps): ReactElement {
-  const readout = durationReadout(task);
+export function StatusSlot({ task, collectedAt, completedAt, actions }: StatusSlotProps): ReactElement {
+  const readout = durationReadout(task, completedAt);
   const presentation = statusPresentation(task.status);
   // Ticks once a second only while the readout is live. `useNow` is a pure
   // timer that reads no store state and issues no requests — the client is

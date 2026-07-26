@@ -509,9 +509,28 @@ export function createBackburnerStore(baseUrl = ""): StoreApi<BackburnerStore> {
 
     async function submit(input: SubmitInput): Promise<Task> {
       if (!api) throw new ApiError({ status: 401, code: "unauthorized", message: "Not signed in." });
-      const task = await api.submit(input);
+      let task: Task;
+      try {
+        task = await api.submit(input);
+      } catch (err) {
+        // A stale key must land the user back at the gate from here too, the
+        // same as it does from any other call (§4.1: "whenever ANY API call
+        // returns 401"). The error still propagates so the caller can stop its
+        // own pending state; the gate replaces the screen regardless.
+        if ((err as ApiError).status === 401) kickToGate();
+        throw err;
+      }
       // Confirmation is the `accepted` event, not this 201 (§5 rule 3 / §6.4).
-      markPending(task.id, "submit");
+      //
+      // Submit is the one action whose pending mark can only be set AFTER its
+      // request resolves, because the task id does not exist until then — and
+      // the `accepted` event is pushed the instant the transaction commits,
+      // while the 201 still has to serialise and travel. On a local connection
+      // the event reliably wins that race. Marking pending unconditionally
+      // would then wait for a confirmation that had already passed, stranding
+      // the button on "Submitting…" forever. If the task is already in the
+      // store, the event landed and there is nothing left to wait for.
+      if (!get().tasksById.has(task.id)) markPending(task.id, "submit");
       return task;
     }
 

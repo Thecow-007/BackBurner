@@ -149,9 +149,11 @@ The devcontainer (`.devcontainer/devcontainer.json`) reuses the same `docker-com
 
 ## Project status
 
-**Complete and green:** the engine (`@backburner/engine`), the full HTTP + SSE API (`@backburner/api`), seeding, and the automated test matrix — the 9 criteria tests, 10 supplemental contract-defense suites, and the engine unit suites.
+**Complete and green:** the engine (`@backburner/engine`), the full HTTP + SSE API (`@backburner/api`), seeding, and the automated test matrix — the 9 criteria tests, 11 supplemental contract-defense suites, and the engine unit suites.
 
-**Not yet built:** the React dashboard (`@backburner/web`) is fully specified in [`docs/frontend-brief.md`](./docs/frontend-brief.md) but not yet implemented — it's the next milestone. There is no deployed URL yet; production topology is designed in [`docs/deployment.md`](./docs/deployment.md) and lands once the frontend is in place.
+**The React dashboard (`@backburner/web`)** is built: the API-key gate, the task register, task detail, submit, and the notification layer, against the behavioural spec in [`docs/frontend-brief.md`](./docs/frontend-brief.md) and the visual spec in [`docs/ui-spec.md`](./docs/ui-spec.md). In development `npm run dev` runs the API and the Vite dev server together, with `/tasks`, `/events` and `/health` proxied through; in production the API process serves the built SPA itself.
+
+**Not yet built:** there is no deployed URL. Production topology is designed in [`docs/deployment.md`](./docs/deployment.md), and the container image and deploy pipeline are the remaining milestone.
 
 **Normative docs** (the design authority for everything above):
 

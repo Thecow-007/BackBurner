@@ -54,7 +54,7 @@ failed          #ff4438
 cancelled       #8a7a72
 ```
 
-**Ember is not a status.** It is permitted in exactly three places: the wordmark, the primary action button, and the `Reconnecting — data may be behind` connection state. It appears **nowhere in the task table and nowhere in the timeline**. Running-orange beside failed-red made a healthy screen read as an alarming one; that is why running is blue.
+**Ember is not a status.** It is permitted in exactly four places: the wordmark, the primary action button, the `Reconnecting — data may be behind` connection state, and the unread-notification badge (which the design draws in ember — it is an attention marker, not a status, and it never appears on a task). It appears **nowhere in the task table and nowhere in the timeline**. Running-orange beside failed-red made a healthy screen read as an alarming one; that is why running is blue.
 
 Derived recipes (`S` = the status colour):
 - Status chip, non-running: `background: S + '16'`, `border: 1px solid S + '3d'`, `color: S`.

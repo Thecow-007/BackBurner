@@ -1,0 +1,191 @@
+/*
+ * Jump-to — ui-spec §3.13. The trigger mirrors the design's register search
+ * field; the overlay keeps the familiar command-palette shape while the copy
+ * inside it is careful never to imply a search the API cannot perform.
+ *
+ * Colours are var(--token) only; theme/tokens.css is the sole file in the SPA
+ * where a literal may appear.
+ */
+
+/* ── Trigger ─────────────────────────────────────────────────────────────── */
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: 1;
+  min-width: 0;
+  max-width: 340px;
+  /* 44px at mobile, where this sits in the thumb's reach (ui-spec §4). */
+  min-height: var(--tap);
+  padding: 0 var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  background: var(--bg-app);
+  text-align: left;
+}
+
+@media (min-width: 900px) {
+  .trigger {
+    min-height: 34px;
+  }
+}
+
+.trigger:hover {
+  border-color: var(--line-strong);
+}
+
+.glyph {
+  flex: none;
+  color: var(--text-quiet);
+  font-size: var(--fs-body);
+}
+
+.placeholder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-row);
+  color: var(--text-quiet);
+}
+
+.kbd {
+  flex: none;
+  padding: 1px var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro-lg);
+  color: var(--text-quiet);
+}
+
+/* ── Overlay ─────────────────────────────────────────────────────────────── */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  /* Sits below the top edge rather than centred: the field lands where the
+   * trigger was, so the eye does not have to re-find it. */
+  padding: 12vh var(--s-7) var(--s-7);
+  background: var(--scrim);
+  /* No token carries stacking order. */
+  z-index: 110;
+}
+
+.overlay {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: 70vh;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-panel);
+  overflow: hidden;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-5) var(--s-6);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-raised);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body-lg);
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--text-quiet);
+}
+
+.results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--s-7);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.result {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--s-3) var(--s-6);
+  border: 0;
+  border-bottom: 1px solid var(--line-quiet);
+  background: transparent;
+  text-align: left;
+}
+
+.resultOn {
+  background: var(--bg-raised);
+}
+
+.resultHandle {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-body-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.resultMeta {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-dim);
+}
+
+/* The id is what tells two tasks that shared a handle apart, so it is always
+ * present — truncated from the left is not an option, so it simply shrinks. */
+.resultId {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-quiet);
+}
+
+.hint {
+  margin: 0;
+  padding: var(--s-3) var(--s-6);
+  border-top: 1px solid var(--line);
+  background: var(--bg-raised);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-quiet);
+}

@@ -1,0 +1,373 @@
+/*
+ * The persistent sidebar — ui-spec §3.14 and design 5a (desktop three-pane).
+ * 230px, `--bg-panel`, one hairline against the register.
+ *
+ * Every colour here is a token. The two places a status colour appears (the
+ * count-row glyph) receive it as the `--row-ink` custom property, set by the
+ * component from `lib/status.ts` — the same discipline `StatusChip` uses, so
+ * no stylesheet ever enumerates the five statuses.
+ */
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--line);
+  padding: var(--s-7) 0 var(--s-6);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Nothing in the column may be squeezed: the footer is pinned by margin-top,
+ * so a short viewport must scroll rather than compress the counts. */
+.head,
+.nav,
+.section,
+.foot {
+  flex: none;
+}
+
+/* ── Head: the mark and the connection indicator ─────────────────────────── */
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  padding: 0 var(--s-7) var(--s-7);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  align-self: flex-start;
+  border-radius: var(--r-input);
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+/*
+ * The mark (ui-spec §6): 8×22, radius 1, hot end at the BOTTOM. It is a fixed
+ * bar — it may never fill or deplete, because the engine cannot know worker
+ * progress. One of ember's three permitted uses.
+ */
+.emberBar {
+  width: 8px;
+  height: 22px;
+  flex: none;
+  border-radius: 1px;
+  background: linear-gradient(180deg, var(--ember-hi), var(--ember));
+}
+
+/* The drawer draws the word one step larger (5d); the bar is unchanged. */
+.wordmarkLarge {
+  font-size: 17px;
+}
+
+/* ── Nav ─────────────────────────────────────────────────────────────────── */
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-6) 0 var(--s-2);
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  width: 100%;
+  min-height: 36px;
+  padding: 9px var(--s-7);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-lg);
+  color: var(--text-dim);
+}
+
+.navItem:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+/*
+ * The active destination is marked with surface and weight, never with ember:
+ * ember is the brand, the primary action and the degraded connection, and
+ * nothing else (ui-spec §1.1).
+ */
+.navItem[aria-current="page"] {
+  background: var(--bg-raised);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.navGlyph {
+  width: 14px;
+  flex: none;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  line-height: 1;
+  color: var(--text-dim);
+}
+
+.navLabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.navMeta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-quiet);
+}
+
+/* Unread badge, drawn as the design draws the mobile bell's badge (5c). */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: var(--r-chip);
+  background: var(--ember);
+  color: var(--on-ember);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+/* ── Count sections ──────────────────────────────────────────────────────── */
+
+.sectionLabel {
+  margin: 0;
+  padding: var(--s-5) var(--s-7) var(--s-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-quiet);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 32px;
+  padding: 7px var(--s-7);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  color: var(--text-dim);
+}
+
+.row:hover {
+  background: var(--bg-raised);
+}
+
+.row[aria-pressed="true"] {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+/* The status glyph carries the status colour; the row never does, so a screen
+ * of failures does not read as an alarm. */
+.glyph {
+  width: 12px;
+  flex: none;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  line-height: 1;
+  color: var(--row-ink, var(--text-dim));
+}
+
+/*
+ * Status and lane names are API values, so they are mono (ui-spec §1.2). `All`
+ * is the interface's own word, but it is the null value of the same column and
+ * has to align with it — it stays in the mono column deliberately.
+ */
+.rowLabel {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-row);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-quiet);
+}
+
+/* The lane checkbox. Decorative — the button's aria-pressed carries the state. */
+.box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.box[data-checked="true"] {
+  background: var(--line-strong);
+}
+
+/* ── Lane dropdown (more than six lanes) ─────────────────────────────────── */
+
+.laneMenu {
+  position: relative;
+  padding: 0 var(--s-7);
+}
+
+.laneTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: 32px;
+  padding: var(--s-2) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: var(--bg-app);
+  font-family: var(--font-mono);
+  font-size: var(--fs-row);
+  color: var(--text);
+}
+
+.laneTrigger[aria-expanded="true"] {
+  border-color: var(--line-strong);
+}
+
+.laneTriggerLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.laneCaret {
+  color: var(--text-dim);
+}
+
+.lanePopover {
+  position: absolute;
+  z-index: 20;
+  left: var(--s-7);
+  right: var(--s-7);
+  top: calc(100% + var(--s-1));
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  padding: var(--s-2) 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-panel);
+  background: var(--bg-raised);
+}
+
+.laneSearch {
+  margin: var(--s-2) var(--s-4) var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: var(--bg-app);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  color: var(--text);
+}
+
+.laneSearch:focus {
+  outline: none;
+  border-color: var(--line-strong);
+}
+
+.laneSearch::placeholder {
+  color: var(--text-quiet);
+}
+
+.laneList {
+  overflow-y: auto;
+}
+
+/* No matches is a real state: the filter box can exclude everything. */
+.laneEmpty {
+  padding: var(--s-3) var(--s-7);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-quiet);
+}
+
+/* ── Footer identity ─────────────────────────────────────────────────────── */
+
+/*
+ * The masked key is the ENTIRE account surface: no username, no avatar. No
+ * endpoint can tell the SPA who it is, so a name would be invented state
+ * (ADR 0020, ui-spec §7).
+ */
+.foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-1);
+  margin-top: auto;
+  padding: var(--s-6) var(--s-7) 0;
+  border-top: 1px solid var(--line);
+}
+
+.key {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  color: var(--text-quiet);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.changeKey {
+  padding: var(--s-2) 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-dim);
+}
+
+.changeKey:hover {
+  color: var(--text);
+}

@@ -110,6 +110,28 @@ describe("durationReadout — the seven detail-header states", () => {
     expect(r.terminalNote).toBe("terminal · view only");
   });
 
+  it("does not let collecting change how long the work took", () => {
+    // `updated_at` moves to the collect instant, so measuring to it made a
+    // 9.8s task read 27.5s once an operator got round to collecting it.
+    const created = "2026-07-26T12:00:00.000Z";
+    const finished = "2026-07-26T12:00:09.800Z";
+    const collected = "2026-07-26T12:00:27.500Z";
+
+    const open = durationReadout(task({ status: "ready", created_at: created, updated_at: finished }));
+    const done = durationReadout(
+      task({ status: "ready", collected: true, created_at: created, updated_at: collected }),
+      finished
+    );
+
+    expect(done.until).toBe(open.until);
+    expect(done.muted).toBe(true);
+  });
+
+  it("falls back to updated_at when history is not loaded, which is exact while uncollected", () => {
+    const t = task({ status: "ready", collected: false });
+    expect(durationReadout(t).until).toBe(t.updated_at);
+  });
+
   it("always holds a duration, so the panel never jumps between states", () => {
     for (const status of STATUS_ORDER) {
       for (const collected of [false, true]) {
@@ -129,8 +151,10 @@ describe("stateNote", () => {
   });
 
   it("omits the collection time when history is not loaded, rather than inventing one", () => {
+    // And omits the word "collected" with it: the CollectedMarker sits beside
+    // this note in every surface, so repeating it reads "collected collected".
     const t = task({ status: "ready", collected: true });
-    expect(stateNote(t)).toBe("collected · handle released · result shown below");
+    expect(stateNote(t)).toBe("handle released · result shown below");
   });
 
   it("names the collection time in the operator's own wall clock when history has it", () => {
@@ -151,9 +175,31 @@ describe("stateNote", () => {
     );
   });
 
+  it("never contradicts the retryable flag the error panel prints beside it", () => {
+    // Retryable, budget spent: the attempts ran out, the error was not fatal.
+    const exhausted = task({
+      status: "failed",
+      attempts: 3,
+      max_attempts: 3,
+      error: { reason: "HTTP 503", retryable: true },
+    });
+    expect(stateNote(exhausted)).toBe("budget exhausted · the engine will not retry it again");
+    expect(stateNote(exhausted)).not.toMatch(/not retryable/);
+
+    // Genuinely non-retryable: fail_permanent, budget untouched.
+    const permanent = task({
+      status: "failed",
+      attempts: 1,
+      max_attempts: 3,
+      error: { reason: "invalid selector", retryable: false },
+    });
+    expect(stateNote(permanent)).toBe("not retryable by the engine");
+    expect(stateNote(permanent)).not.toMatch(/budget exhausted/);
+  });
+
   it("says retry is retired once a failed task is collected", () => {
     expect(stateNote(task({ status: "failed", collected: true }))).toBe(
-      "collected · retry permanently retired · error still shown"
+      "retry permanently retired · error still shown"
     );
   });
 });

@@ -1,0 +1,269 @@
+/*
+ * The persistent chrome and the three/two/one-pane layout — ui-spec §2.
+ *
+ * | width     | panes | detail lives                                          |
+ * |-----------|-------|-------------------------------------------------------|
+ * | ≥ 1280px  | three | persistent right pane, 446px                          |
+ * | 900–1279  | two   | replaces the register; the sidebar never moves        |
+ * | < 900px   | one   | sidebar becomes a drawer; detail is a full screen     |
+ *
+ * The switch is pure CSS. No width listener exists anywhere in the SPA, so the
+ * sidebar cannot reflow, remount or lose its scroll position when the viewport
+ * changes — and both panes stay mounted, so crossing 1280 never refetches.
+ * `data-detail` / `data-submit` on the root say WHICH route is showing; the
+ * media queries say which pane wins at that width.
+ *
+ * Mobile-first: the base rules are the one-pane layout.
+ *
+ * Every override of a class a component owns is written as `.shell .x`, so it
+ * beats that component's own single-class rule regardless of bundle order.
+ */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+
+/* ── Mobile header (design 5c) ───────────────────────────────────────────── */
+
+.mobileHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex: none;
+  padding: var(--s-6) var(--s-7) var(--s-4);
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: inline-flex;
+  border-radius: var(--r-input);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/*
+ * The clock chip. Deliberately NOT a live region: the label ticks once a second
+ * while the stream is healthy, and a polite region that announces every second
+ * is unusable. The words for a degraded stream come from the full-width
+ * <ConnectionIndicator> bar below, which announces for itself.
+ */
+.clock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 5px var(--s-3);
+  border: 1px solid var(--conn-live-border);
+  border-radius: var(--r-chip);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--st-ready);
+  white-space: nowrap;
+}
+
+.clockDot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Not live: the clock is frozen at the last instant we can vouch for, so it
+ * takes the degraded-connection treatment rather than claiming green. */
+.clock:not([data-state="live"]) {
+  color: var(--ember);
+  border-color: var(--conn-reconnecting-border);
+  background: var(--conn-reconnecting-bg);
+}
+
+.bell,
+.menuButton {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 17px;
+}
+
+.badge {
+  position: absolute;
+  top: 6px;
+  right: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-chip);
+  background: var(--ember);
+  color: var(--on-ember);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+/* The degraded-connection bar sits directly under the header (ui-spec §3.9). */
+.connBar {
+  flex: none;
+}
+
+/* ── Panes ───────────────────────────────────────────────────────────────── */
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* One pane: the sidebar is the drawer instead. */
+.shell .sidebar {
+  display: none;
+}
+
+.panes {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mainPane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mainContent {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Wide content scrolls inside its own container; the page never scrolls
+   * sideways (ui-spec §2). */
+  overflow-x: hidden;
+}
+
+.detailPane {
+  display: none;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-panel);
+}
+
+.detailContent {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* One pane and two panes: the detail is a full screen that replaces the
+ * register. Both stay mounted; only one is shown. */
+.shell[data-detail="true"] .mainPane {
+  display: none;
+}
+
+.shell[data-detail="true"] .detailPane {
+  display: flex;
+}
+
+/* The `← Register` affordance belongs to the two-pane replacement alone: at one
+ * pane the detail screen owns its own back control, and at three panes there is
+ * nothing to go back from. */
+.backBar {
+  display: none;
+  align-items: center;
+  gap: var(--s-5);
+  flex: none;
+  padding: var(--s-5) var(--s-8);
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--line);
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 36px;
+  padding: 0 var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  font-size: var(--fs-body);
+  color: var(--text);
+}
+
+.backLink:hover {
+  background: var(--bg-panel);
+}
+
+/* ── Two panes: 900–1279px ───────────────────────────────────────────────── */
+
+@media (min-width: 900px) {
+  .mobileHeader,
+  .connBar {
+    display: none;
+  }
+
+  .shell .sidebar {
+    display: flex;
+  }
+
+  /* The counts live in the sidebar again, so the rail retires. */
+  .shell .rail {
+    display: none;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1279.98px) {
+  .shell[data-detail="true"] .backBar {
+    display: flex;
+  }
+}
+
+/* ── Three panes: ≥ 1280px ───────────────────────────────────────────────── */
+
+@media (min-width: 1280px) {
+  /* The register keeps its column; the detail fills the third pane. */
+  .shell[data-detail="true"] .mainPane {
+    display: flex;
+  }
+
+  /* The hairline belongs to the third pane, so it appears exactly when that
+   * pane does — /submit hides it and leaves no rule floating at the edge. */
+  .detailPane {
+    display: flex;
+    width: var(--detail-w);
+    flex: none;
+    border-left: 1px solid var(--line);
+  }
+
+  /* /submit replaces the register AND the detail area with one panel
+   * (ui-spec §7); the sidebar persists. */
+  .shell[data-submit="true"] .detailPane {
+    display: none;
+  }
+}

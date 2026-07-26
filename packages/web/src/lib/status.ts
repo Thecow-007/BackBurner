@@ -132,11 +132,20 @@ export interface DurationReadout {
 
 /**
  * The slot ALWAYS holds a duration, in the status colour, with a changing
- * label — so the panel never jumps between states. Needs only `status`,
- * `created_at`, `updated_at` and `attempts`.
+ * label — so the panel never jumps between states.
+ *
+ * `completedAt` is the instant the work actually finished, taken from the
+ * `ready`/`failed` transition in the task's history. It matters because
+ * `updated_at` moves when a task is COLLECTED, and collecting is an operator
+ * action that can happen days later: measuring to `updated_at` made a task read
+ * `6.9s TOTAL` before collection and `27.5s TOTAL` after, as though clicking a
+ * button had changed how long the worker ran. Where history is not loaded the
+ * caller omits it and `updated_at` is used, which is exact for every
+ * uncollected task — the only case a duration is shown without history.
  */
-export function durationReadout(task: Task): DurationReadout {
-  const base = { since: task.created_at, until: task.updated_at, live: false, muted: false };
+export function durationReadout(task: Task, completedAt?: string): DurationReadout {
+  const finished = task.collected && completedAt !== undefined ? completedAt : task.updated_at;
+  const base = { since: task.created_at, until: finished, live: false, muted: false };
   switch (task.status) {
     case "queued":
       return { ...base, until: null, live: true, label: "WAITING", terminalNote: null };
@@ -180,15 +189,31 @@ export function stateNote(task: Task, collectedAt?: string): string {
       return `attempt budget ${task.max_attempts}`;
     case "running":
       return `attempt ${task.attempts} / ${task.max_attempts} · worker claimed ${clockOf(task.updated_at)}`;
+    // The word "collected" is carried by the CollectedMarker beside the note in
+    // every surface that has one (rows, cards, the detail header), so the note
+    // itself only says it when it can add something the marker cannot — the
+    // time, which is only known where history is loaded. Otherwise the register
+    // reads "collected  collected · handle released".
     case "ready":
-      return task.collected
-        ? [collectedAt ? `collected ${clockOf(collectedAt)}` : "collected", "handle released", "result shown below"].join(" · ")
-        : "result held until you collect · handle still leased";
+      if (!task.collected) return "result held until you collect · handle still leased";
+      return collectedAt
+        ? `collected ${clockOf(collectedAt)} · handle released · result shown below`
+        : "handle released · result shown below";
     case "failed":
-      if (task.collected) return "collected · retry permanently retired · error still shown";
-      return task.error?.retryable === false
-        ? "not retryable by the engine"
-        : `budget exhausted · not retryable by the engine`;
+      if (task.collected) {
+        return collectedAt
+          ? `collected ${clockOf(collectedAt)} · retry permanently retired · error still shown`
+          : "retry permanently retired · error still shown";
+      }
+      // These two are NOT the same failure, and the error panel prints
+      // `retryable` directly beside this line — so saying "not retryable" for a
+      // retryable error that merely ran out of budget puts a visible
+      // contradiction on screen. A retryable failure that exhausted its budget
+      // is done because the attempts ran out, not because the error was fatal.
+      if (task.error?.retryable === false) return "not retryable by the engine";
+      return task.attempts >= task.max_attempts
+        ? "budget exhausted · the engine will not retry it again"
+        : "the engine will not retry it again";
     case "cancelled":
       return "operator cancelled · worker aborted · handle released";
     default:

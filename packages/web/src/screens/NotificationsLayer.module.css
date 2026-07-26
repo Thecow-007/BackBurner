@@ -1,0 +1,227 @@
+/*
+ * Toasts and the notification centre (docs/frontend-brief.md §7).
+ * Placement: top-right on desktop, bottom on mobile — above the thumb zone,
+ * where a notice can be dismissed one-handed without covering the primary
+ * action.
+ */
+
+.toasts {
+  position: fixed;
+  top: var(--s-7);
+  right: var(--s-7);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  width: min(380px, calc(100vw - var(--s-7) * 2));
+  pointer-events: none;
+}
+
+.toasts > * {
+  pointer-events: auto;
+}
+
+@media (max-width: 899px) {
+  .toasts {
+    top: auto;
+    bottom: var(--s-7);
+    left: var(--s-5);
+    right: var(--s-5);
+    width: auto;
+    /* Newest nearest the thumb. */
+    flex-direction: column-reverse;
+  }
+}
+
+/* ── The centre ─────────────────────────────────────────────────────────── */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: var(--scrim);
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: var(--s-7);
+}
+
+/* Anchored popover on desktop … */
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 100%);
+  max-height: min(560px, calc(100vh - var(--s-7) * 2));
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+/* … full-width drawer on mobile. */
+@media (max-width: 899px) {
+  .scrim {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .panel {
+    width: 100%;
+    max-height: none;
+    border-radius: 0;
+    border-width: 0;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  padding: var(--s-6) var(--s-7);
+  border-bottom: 1px solid var(--line-quiet);
+  background: var(--bg-raised);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fs-body-lg);
+  font-weight: 600;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border: 0;
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.close:hover {
+  color: var(--text);
+}
+
+.list {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.notice {
+  display: flex;
+  gap: var(--s-4);
+  width: 100%;
+  padding: var(--s-5) var(--s-7);
+  border: 0;
+  border-bottom: 1px solid var(--line-quiet);
+  background: none;
+  text-align: left;
+}
+
+.notice:hover {
+  background: var(--bg-raised);
+}
+
+/* Unread carries a coloured dot AND sits on a raised ground — never colour
+ * alone (ui-spec §4). */
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+
+.noticeBody {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.noticeHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.handle {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.time {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-mono-meta);
+  color: var(--text-quiet);
+}
+
+.detail,
+.detailFailed {
+  font-size: var(--fs-row);
+  line-height: 1.45;
+  text-wrap: pretty;
+  /* Engine text wraps; it is never truncated. */
+  overflow-wrap: anywhere;
+}
+
+.detail {
+  color: var(--text-dim);
+}
+
+.detailFailed {
+  color: var(--text-error);
+}
+
+.empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
+  padding: var(--s-10) var(--s-7);
+  text-align: center;
+}
+
+.emptyHeading {
+  margin: 0;
+  max-width: 320px;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+.emptyNote {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-quiet);
+  text-wrap: pretty;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  padding: var(--s-5) var(--s-7);
+  border-top: 1px solid var(--line-quiet);
+}
+
+.footnote {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro-lg);
+  color: var(--text-quiet);
+}

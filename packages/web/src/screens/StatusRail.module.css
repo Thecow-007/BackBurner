@@ -1,0 +1,80 @@
+/*
+ * The one-pane status rail — ui-spec §3.10 and design 5c. At one pane the
+ * sidebar's STATUS counts survive as a horizontally scrolling chip rail above
+ * the list, with a right-edge fade so it reads as scrollable.
+ *
+ * The rail scrolls inside itself; the page never scrolls sideways (ui-spec §2).
+ */
+
+.root {
+  position: relative;
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-app);
+}
+
+.scroller {
+  display: flex;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-7);
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* The fade is decoration, not a scrollbar; the real scrollbar would sit on
+   * top of it and re-introduce the horizontal rule the design removed. */
+  scrollbar-width: none;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+  /* ≥44px: this is a touch surface (ui-spec §4). The design drew 36. */
+  min-height: var(--tap);
+  padding: 0 var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--fs-row);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/*
+ * Selection is carried by surface and border, never by the status colour: a
+ * chip that filled with red when you selected `failed` would make choosing a
+ * filter look like an alarm. The glyph keeps the status hue in both states.
+ */
+.chip[aria-pressed="true"] {
+  border-color: var(--line-strong);
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.glyph {
+  line-height: 1;
+  color: var(--row-ink, var(--text-dim));
+}
+
+.count {
+  font-size: var(--fs-mono-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-quiet);
+}
+
+/* Right-edge fade (ui-spec §3.10), on the non-scrolling wrapper so it stays
+ * pinned while the chips move under it. */
+.fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 1px;
+  width: 44px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--bg-app) 70%);
+}

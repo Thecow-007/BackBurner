@@ -1,0 +1,252 @@
+/*
+ * Task detail — docs/ui-spec.md §3.6 (the duration slot and its frame), §3.12
+ * (JSON and error panels), §4 (touch targets, focus). Every colour is a
+ * var(--token); theme/tokens.css is the only file that may hold a literal.
+ *
+ * The pane is a single column at every width. The shell owns the pane count and
+ * the surrounding chrome; this screen owns only what is inside it, and never
+ * scrolls the page sideways — wide payloads scroll inside their own block
+ * (ui-spec §2), which `JsonPanel` already does.
+ */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-7);
+  padding: var(--s-8) var(--s-9);
+  min-width: 0;
+  background: var(--bg-panel);
+}
+
+/* ── Back affordance (< 1280px only; the prop is absent at three panes) ───── */
+
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 36px;
+  padding: 0 var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+}
+
+.back:hover {
+  background: var(--bg-raised);
+}
+
+/* One back affordance, exactly one owner per width. Below 900px the detail is a
+ * full screen and owns its own; from 900px the shell draws the `← Register` bar
+ * (it knows the pane count, this screen does not), and at three panes there is
+ * nothing to go back from because the register never left. */
+@media (min-width: 900px) {
+  .back {
+    display: none;
+  }
+}
+
+/* ── Identity header ─────────────────────────────────────────────────────── */
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+.handleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+/* The handle is the human name and comes from the API, so it is mono. It is a
+ * leased alias, not an identity — the id below it is the identity. */
+.handle {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-detail-handle);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  word-break: break-all;
+}
+
+.idRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-dim);
+}
+
+/* Never elided: this is what scripts and permanent links use. */
+.id {
+  word-break: break-all;
+}
+
+.copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: var(--s-1) var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+}
+
+.copy:hover {
+  background: var(--bg-raised);
+}
+
+/* ── The duration slot's frame (ui-spec §3.6) ────────────────────────────── */
+
+.slotFrame {
+  padding: var(--s-6) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+/* ── Metadata ────────────────────────────────────────────────────────────── */
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3) var(--s-10);
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.metaItem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.metaTerm {
+  color: var(--text-quiet);
+}
+
+.metaValue {
+  margin: 0;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.relative {
+  color: var(--text-quiet);
+}
+
+/* ── Error panel ─────────────────────────────────────────────────────────── */
+
+/* Verbatim and never truncated: it wraps rather than scrolls, so no part of a
+ * failure can end up off screen (ui-spec §3.12). */
+.reason {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.retryable {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-dim);
+}
+
+/* The interface's own voice, so Archivo — it explains what the engine will do
+ * next, it does not quote the engine. */
+.aside {
+  margin: var(--s-4) 0 0;
+  font-size: var(--fs-row);
+  line-height: 1.5;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+.errorActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--s-5);
+}
+
+/* ── Result / params blocks ──────────────────────────────────────────────── */
+
+.block {
+  min-width: 0;
+}
+
+.held {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-dim);
+}
+
+.handleInline {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.resultAction {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--s-5);
+}
+
+/* ── Not-found state ─────────────────────────────────────────────────────── */
+
+/* Navigation, so an anchor — but drawn as the secondary button the empty-state
+ * action slot expects (ui-spec §3.11). */
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0 var(--s-9);
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: var(--r-btn);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-lg);
+  font-weight: 600;
+}
+
+.backLink:hover {
+  background: var(--bg-raised);
+}
+
+/* ── One pane (ui-spec §2, §4: touch targets >= 44) ──────────────────────── */
+
+@media (max-width: 899px) {
+  .screen {
+    padding: var(--s-7) var(--s-7);
+  }
+
+  .back,
+  .copy {
+    min-height: var(--tap);
+    min-width: var(--tap);
+  }
+}

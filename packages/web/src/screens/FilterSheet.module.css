@@ -1,0 +1,322 @@
+/*
+ * Filter controls — the desktop bar, the mobile chip rail and the mobile bottom
+ * sheet (ui-spec §3.10, §3.14, §7).
+ *
+ * The date range and the created ↔ updated switch are additions the design does
+ * not draw, so they borrow the idiom rather than inventing one: mono
+ * micro-labels, --bg-raised fills, --line-strong on the active border.
+ *
+ * Colours are var(--token) only; theme/tokens.css is the sole file in the SPA
+ * where a literal may appear.
+ */
+
+/* ── Status chips (shared by the rail, the bar and the sheet) ─────────────── */
+
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  background: transparent;
+  /* Defaults to the dim tier; each status chip overrides --filter-chip-ink with
+   * the token reference lib/status.ts hands it. */
+  color: var(--filter-chip-ink, var(--text-dim));
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.chipCompact {
+  min-height: 28px;
+  padding: 0 var(--s-4);
+  font-size: var(--fs-mono-meta);
+}
+
+/* Sheet chips clear the 44px touch minimum (ui-spec §4). */
+.chipTouch {
+  min-height: var(--tap);
+  padding: 0 var(--s-6);
+  font-size: var(--fs-body);
+}
+
+.filterChip:hover {
+  background: var(--bg-raised);
+}
+
+.chipOn {
+  border-color: var(--line-strong);
+  background: var(--bg-raised);
+}
+
+.chipGlyph {
+  line-height: 1;
+}
+
+.chipCount {
+  color: var(--text-quiet);
+  font-size: var(--fs-mono-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Mobile: the horizontally scrolling chip rail ─────────────────────────── */
+
+.rail {
+  position: relative;
+  border-bottom: 1px solid var(--line);
+}
+
+.railScroll {
+  display: flex;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-7);
+  overflow-x: auto;
+  /* Wide content scrolls inside its own container; the page never scrolls
+   * sideways (ui-spec §2). */
+  scrollbar-width: none;
+}
+
+.railScroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* The right-edge fade is what says "there is more here" (ui-spec §3.10). */
+.railFade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 1px;
+  width: 44px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--bg-app) 70%);
+}
+
+/* ── Lane select ─────────────────────────────────────────────────────────── */
+
+.select {
+  min-height: 28px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+}
+
+.select:focus-visible {
+  border-color: var(--line-strong);
+}
+
+/* ── Date range ──────────────────────────────────────────────────────────── */
+
+.range {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.dateField {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.dateLabel {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-micro);
+  text-transform: uppercase;
+  color: var(--text-quiet);
+}
+
+.dateInput {
+  min-height: 28px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+}
+
+/* A set range is a live filter, so it wears the active border. `:placeholder-shown`
+ * does not apply to date inputs in any engine, so the state comes from the value
+ * itself rather than from a selector that would silently never match. */
+.dateOn,
+.dateInput:focus-visible {
+  border-color: var(--line-strong);
+}
+
+.rangeDash {
+  color: var(--text-quiet);
+}
+
+/* ── Sort switch ─────────────────────────────────────────────────────────── */
+
+.sort {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.sortButton {
+  min-height: 28px;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  white-space: nowrap;
+}
+
+.sortOn {
+  border-color: var(--line-strong);
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+/* ── Desktop: the compact row above the table ─────────────────────────────── */
+
+.bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3) var(--s-5);
+  padding: var(--s-3) var(--s-7);
+  border-bottom: 1px solid var(--line);
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.clear {
+  margin-left: auto;
+  min-height: 28px;
+  padding: 0 var(--s-3);
+  border: 0;
+  background: transparent;
+  color: var(--ember);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+}
+
+.clear:hover {
+  text-decoration: underline;
+}
+
+/* ── Mobile: the bottom sheet ─────────────────────────────────────────────── */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  background: var(--scrim);
+  /* No token carries stacking order; the sheet sits above the app shell and
+   * level with ConfirmSheet, which is never open at the same time. */
+  z-index: 100;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  width: 100%;
+  max-height: 88vh;
+  padding: var(--s-4) var(--s-7) var(--s-9);
+  padding-bottom: calc(var(--s-9) + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-panel);
+  border-top: 1px solid var(--line-strong);
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+}
+
+/* 40 x 4 grab handle — neither dimension has a token (ui-spec §3.8). */
+.grab {
+  width: 40px;
+  height: 4px;
+  margin: var(--s-1) auto var(--s-2);
+  border-radius: var(--r-chip);
+  background: var(--line-strong);
+}
+
+.sheetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding-bottom: var(--s-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.sheetTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sheetActive {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.clearAll {
+  min-height: var(--tap);
+  padding: 0 var(--s-3);
+  border: 0;
+  background: transparent;
+  color: var(--ember);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  overflow-y: auto;
+}
+
+.sectionLabel {
+  margin: var(--s-3) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-micro);
+  color: var(--text-quiet);
+}
+
+.chipWrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+/* The sheet's controls get the touch treatment the compact row does not. */
+.sheetBody .select,
+.sheetBody .dateInput,
+.sheetBody .sortButton {
+  min-height: var(--tap);
+  font-size: var(--fs-body);
+}
+
+.sheetBody .sortButton {
+  flex: 1;
+  justify-content: center;
+  text-align: center;
+}
+
+.show {
+  width: 100%;
+}

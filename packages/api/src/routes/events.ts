@@ -84,6 +84,16 @@ export async function registerEventsRoute(app: FastifyInstance, opts: EventsRout
     // accepted, independent of when the first event/heartbeat arrives.
     res.flushHeaders();
 
+    // `flushHeaders()` is enough for a DIRECT connection, but not through an
+    // intermediary: a proxy generally holds the response until it has body
+    // bytes to forward, so the browser stays in CONNECTING and `onopen` never
+    // fires. The Vite dev proxy showed exactly that — the stream only came
+    // alive on the first 20s heartbeat — and nginx and Cloudflare buffer the
+    // same way, so this is a production concern, not a dev-only one. One
+    // comment byte on connect opens the stream everywhere. Comments are
+    // ignored by EventSource and by any conforming consumer.
+    res.write(": open\n\n");
+
     let closed = false;
     let notifyClosed: (() => void) | undefined;
     const closedPromise = new Promise<void>((resolve) => {

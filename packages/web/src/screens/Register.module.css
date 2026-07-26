@@ -1,0 +1,323 @@
+/*
+ * The task register — ui-spec §2 (tracks, panes), §3.10 (counts), §3.11
+ * (states), ADR 0019 (the infinite-scroll sentinel).
+ *
+ * `--register-tracks` is declared HERE and inherits into TaskRow.module.css.
+ * The header line below and every row read the same custom property, which is
+ * what makes "header and rows share identical tracks and gap" (ui-spec §2)
+ * impossible to break from one side.
+ *
+ * Colours are var(--token) only; theme/tokens.css is the sole file in the SPA
+ * where a literal may appear.
+ */
+
+.register {
+  /* gutter · HANDLE · STATUS · LANE · ATTEMPTS · CREATED · NOTE.
+   * NOTE carries error text and must never ellipse below ~180px, which is why
+   * its track has a floor rather than a bare 1fr.
+   *
+   * HANDLE is 132px, not the design's 116px. 116 was budgeted against
+   * eight-character samples (`scrape-1`); the seeded set already reaches
+   * `report-10`, which truncated to `report-…`, and handle numbers only grow
+   * from there. Truncating the handle is not an option in a product whose
+   * central idea is the handle, so the 16px comes out of NOTE's flexible
+   * track — every other track, and the 12px gap, are untouched and NOTE stays
+   * far above its 180px floor at every supported width. */
+  --register-tracks: 4px 132px 116px 70px 82px 96px minmax(180px, 1fr);
+
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-app);
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-7);
+  border-bottom: 1px solid var(--line);
+}
+
+/* The primary action, at the right edge as the design has it. The summary
+ * beside it already claims the free space with `margin-left: auto`, so this
+ * only needs to follow it. */
+.newTask {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-left: var(--s-2);
+  min-height: 36px;
+  padding: 0 var(--s-6);
+  border-radius: var(--r-btn);
+  background: var(--ember);
+  color: var(--on-ember);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.newTask:hover {
+  filter: brightness(1.12);
+}
+
+.filtersButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: none;
+  min-height: var(--tap);
+  padding: 0 var(--s-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-btn);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.filtersBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px var(--s-2);
+  border-radius: var(--r-chip);
+  background: var(--ember);
+  color: var(--on-ember);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  font-weight: 700;
+}
+
+/* `N running · N to collect` — both numbers are the server's (ADR 0018). */
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: 0 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.running {
+  color: var(--st-running);
+}
+
+.collectable {
+  color: var(--st-ready);
+}
+
+.summaryDot {
+  color: var(--line-strong);
+}
+
+/* ── Desktop column header ───────────────────────────────────────────────── */
+
+.head {
+  display: grid;
+  grid-template-columns: var(--register-tracks);
+  column-gap: var(--s-5);
+  align-items: center;
+  padding: var(--s-3) var(--s-7) var(--s-3) 0;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.13em;
+  color: var(--text-quiet);
+}
+
+.headRight {
+  text-align: right;
+}
+
+.headSortCell {
+  display: flex;
+  min-width: 0;
+}
+
+.headSort {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: nowrap;
+}
+
+.headSort:hover {
+  color: var(--text-dim);
+}
+
+/* The active sort column reads at full strength — the arrow alone would be a
+ * glyph-only signal. */
+.headSortOn {
+  color: var(--text);
+}
+
+/* ── Scrolling list body ─────────────────────────────────────────────────── */
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Wide content scrolls in its own container; the page never scrolls
+   * sideways (ui-spec §2). */
+  overflow-x: hidden;
+}
+
+.rows,
+.cards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ── Mobile groups (ui-spec §3.10, design 5c) ────────────────────────────── */
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-5) var(--s-7) var(--s-3);
+  background: var(--bg-group);
+}
+
+.group + .group .groupHead {
+  border-top: 1px solid var(--line);
+}
+
+.groupLabel,
+.groupLabelLive {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--text-quiet);
+}
+
+/* LIVE is the one group header that borrows the running colour — it is the
+ * section the operator came to watch. */
+.groupLabelLive {
+  color: var(--st-running);
+}
+
+.groupMeta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-quiet);
+}
+
+/* ── The infinite-scroll sentinel (ADR 0019) ─────────────────────────────── */
+
+/*
+ * Rendered as the design's quiet mono line, not as a button: there is no
+ * "Load more" affordance anywhere in this application. It is a <button> only so
+ * that keyboard and assistive-tech users get a real, announced, operable stop —
+ * scrolling to it and tabbing to it do exactly the same thing.
+ */
+.sentinel {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--s-5) var(--s-8);
+  border: 0;
+  background: transparent;
+  color: var(--text-quiet);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.sentinel:hover {
+  color: var(--text-dim);
+}
+
+/*
+ * `global()` is load-bearing: CSS Modules scopes a bare animation name, which
+ * would compile to a name matching no keyframe and silently never run. The
+ * `bb-spin` keyframe lives in theme/global.css, which also disables it under
+ * prefers-reduced-motion.
+ */
+.ring {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border: 1px solid var(--line-strong);
+  border-top-color: var(--text-dim);
+  border-radius: 50%;
+  animation: global(bb-spin) 1s linear infinite;
+}
+
+/* ── States (ui-spec §3.11) ──────────────────────────────────────────────── */
+
+.errorPanel {
+  margin: var(--s-7);
+}
+
+/* The envelope's message, verbatim and never truncated. */
+.errorText {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  line-height: 1.6;
+  color: var(--text-error);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.errorActions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--s-5);
+}
+
+/* Ember is brand + primary action, and this is the empty register's one
+ * action. It is a LINK because it navigates (ui-spec §4). */
+.primaryLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 var(--s-9);
+  border-radius: var(--r-btn);
+  background: var(--ember);
+  color: var(--on-ember);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.primaryLink:hover {
+  filter: brightness(1.12);
+}
+
+/* Anything the API said, in the API's typeface. */
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* ── Mobile insets ───────────────────────────────────────────────────────── */
+
+@media (max-width: 899.98px) {
+  .toolbar {
+    padding: var(--s-4) var(--s-7);
+  }
+
+  /* Clears the shell's fixed bottom action bar so the last card is reachable;
+   * an infinite list must not end underneath a button. */
+  .scroll {
+    padding-bottom: 86px;
+    padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+  }
+}

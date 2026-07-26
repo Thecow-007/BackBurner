@@ -1,0 +1,169 @@
+/*
+ * Desktop register row — docs/ui-spec.md §2 (tracks) and §3.4 (row content).
+ *
+ * `--register-tracks` and `--register-gutter` are declared by Register.module.css
+ * on the register root and inherit down to every row. That is deliberate: the
+ * header line and the rows MUST share identical tracks and gap (ui-spec §2), and
+ * a single inherited custom property is the only way to make drift impossible
+ * across two CSS Modules.
+ *
+ * Colours are var(--token) only; theme/tokens.css is the sole file in the SPA
+ * where a literal may appear.
+ */
+
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--register-tracks);
+  column-gap: var(--s-5);
+  align-items: center;
+  /* 16px right padding; the 4px gutter track supplies the left edge. */
+  padding: 0 var(--s-7) 0 0;
+  /* Density is a feature — do not loosen it (ui-spec §2). */
+  height: var(--row-h);
+  border-bottom: 1px solid var(--line-quiet);
+  font-size: var(--fs-row);
+  font-variant-numeric: tabular-nums;
+}
+
+.row:hover {
+  background: var(--bg-raised);
+}
+
+/*
+ * The selected row (the one `/task/:id` names). It is marked by fill plus a
+ * hairline, never by the gutter: the gutter is the live rail and means one
+ * thing only.
+ */
+.selected {
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* ── Gutter ──────────────────────────────────────────────────────────────── */
+
+.gutter {
+  height: 100%;
+}
+
+/* 3px running-blue rail on live rows only; the 4px track leaves a 1px breath. */
+.live .gutter {
+  width: 3px;
+  background: var(--live-rail);
+}
+
+/* ── Cells ───────────────────────────────────────────────────────────────── */
+
+.handleCell {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.link {
+  font-family: var(--font-mono);
+  font-size: var(--fs-row-handle);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The stretched link: one anchor, the whole row's hit area. */
+.link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: -2px;
+}
+
+.statusCell {
+  display: flex;
+  min-width: 0;
+}
+
+.laneCell,
+.attemptsCell,
+.createdCell {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Attempts is a column of figures, so it aligns on its right edge. */
+.attemptsCell {
+  text-align: right;
+}
+
+.noteCell {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.note,
+.noteError {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note {
+  color: var(--text-dim);
+}
+
+/* Failed rows read the first line of error.reason in the error tint. */
+.noteError {
+  color: var(--text-error);
+}
+
+/* ── Inline actions — ≤ 2 panes only (ui-spec §2) ────────────────────────── */
+
+/*
+ * Anchored to the row's right edge rather than given a track of its own, so the
+ * seven spec tracks stay byte-for-byte identical at every width and the row
+ * keeps its 34px height while the buttons keep their 36px minimum (ui-spec §4).
+ */
+.actions {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: var(--s-7);
+  transform: translateY(-50%);
+  display: flex;
+  gap: var(--s-2);
+  padding: var(--s-1);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  /* Hidden by OPACITY, not display/visibility: the group must stay focusable
+   * while invisible, because reaching it with Tab is what reveals it. An
+   * affordance that only exists for a mouse would fail ui-spec §4. */
+  opacity: 0;
+  pointer-events: none;
+}
+
+.row:hover .actions,
+.row:focus-within .actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (min-width: 1280px) {
+  /* Three panes: the detail pane is always present, so there are no inline row
+   * actions at all — and `display: none` removes them from the tab order too. */
+  .actions {
+    display: none;
+  }
+}

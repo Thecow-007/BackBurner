@@ -1,0 +1,251 @@
+/*
+ * The mobile drawer — ui-spec §3.14 and design 5d. The sidebar minus the STATUS
+ * counts, which already live in the chip rail above the list. Slides from the
+ * left, 300px, scrim `--scrim`, `✕` in its header.
+ *
+ * Every row here is a touch target: 52px for the nav destinations, 48px for the
+ * lane rows and `Change key` (ui-spec §3.14, §4).
+ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+  border: 0;
+  padding: 0;
+  /* A button so a scrim tap is a real, keyboard-reachable dismissal — it is
+   * removed from the tab order because Escape and the ✕ already carry it and
+   * the trap must not hand focus to something behind the panel. */
+}
+
+.panel {
+  position: fixed;
+  z-index: 41;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 300px;
+  max-width: 88vw;
+  display: flex;
+  flex-direction: column;
+  padding: var(--s-7) 0 var(--s-9);
+  background: var(--bg-panel);
+  border-right: 1px solid var(--line-strong);
+  overflow-y: auto;
+  /*
+   * The drawer slides from the left (ui-spec §3.14). `drawerIn` is declared in
+   * THIS module, so CSS Modules scopes the keyframe and the reference together
+   * — unlike `bb-pulse`, which lives in theme/global.css and must be reached
+   * through `global()`. global.css disables it under prefers-reduced-motion.
+   */
+  animation: drawerIn 160ms ease-out;
+}
+
+@keyframes drawerIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.head,
+.nav,
+.section,
+.foot {
+  flex: none;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  padding: 0 var(--s-7) var(--s-7);
+  border-bottom: 1px solid var(--line);
+}
+
+.headTop {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.headMark {
+  flex: 1;
+  min-width: 0;
+}
+
+.close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin-right: -12px;
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  padding: var(--s-4) 0 var(--s-2);
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  width: 100%;
+  min-height: 52px;
+  padding: 0 var(--s-7);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  color: var(--text-dim);
+}
+
+.navItem[aria-current="page"] {
+  background: var(--bg-raised);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.navGlyph {
+  width: 18px;
+  flex: none;
+  text-align: center;
+  font-family: var(--font-mono);
+  line-height: 1;
+  color: var(--text-dim);
+}
+
+.navLabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.navMeta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-quiet);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--r-chip);
+  background: var(--ember);
+  color: var(--on-ember);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro-lg);
+  font-weight: 700;
+}
+
+.sectionLabel {
+  margin: 0;
+  padding: var(--s-6) var(--s-7) var(--s-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-quiet);
+}
+
+.laneRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--s-7);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.laneRow[aria-pressed="true"] {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.box[data-checked="true"] {
+  background: var(--line-strong);
+}
+
+.laneLabel {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-quiet);
+}
+
+/* The masked key is the whole account surface — no name, no avatar (ADR 0020). */
+.foot {
+  margin-top: auto;
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--line);
+}
+
+.key {
+  display: block;
+  padding: var(--s-2) var(--s-7);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  color: var(--text-quiet);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.changeKey {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--s-7);
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--text);
+}
