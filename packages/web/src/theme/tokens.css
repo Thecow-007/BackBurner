@@ -142,6 +142,20 @@
   --r-chip: 999px;
   --r-sheet: 12px;
 
+  /* Stacking order, declared in one place so a new overlay does not have to
+   * guess. Bottom to top: row affordances sit just above their row; the mobile
+   * action bar floats over the list but UNDER the drawer that covers it; sheets
+   * and the jump-to overlay sit above both; toasts interrupt everything; the
+   * notification centre is the only thing above a toast. */
+  --z-row: 2;
+  --z-sticky: 20;
+  --z-floating: 30;
+  --z-drawer: 40;
+  --z-sheet: 100;
+  --z-overlay: 110;
+  --z-toast: 200;
+  --z-centre: 300;
+
   --sidebar-w: 230px;
   --detail-w: 446px;
   --row-h: 34px; /* density is a feature — do not loosen */

@@ -65,6 +65,24 @@
   filter: brightness(1.12);
 }
 
+/* At one pane the primary action moves to the bottom of the screen, where a
+ * thumb can reach it (frontend-brief §9). The list already reserves the space,
+ * and `env(safe-area-inset-bottom)` keeps it clear of the iOS home indicator
+ * without shrinking the target below 44px. */
+@media (max-width: 899px) {
+  .newTask {
+    position: fixed;
+    left: var(--s-5);
+    right: var(--s-5);
+    bottom: calc(var(--s-5) + env(safe-area-inset-bottom, 0px));
+    /* Above the list, below the drawer that covers the whole screen. */
+    z-index: var(--z-floating);
+    margin-left: 0;
+    min-height: var(--tap);
+    box-shadow: 0 6px 24px var(--scrim);
+  }
+}
+
 .filtersButton {
   display: inline-flex;
   align-items: center;
