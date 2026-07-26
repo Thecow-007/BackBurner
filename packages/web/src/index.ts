@@ -1,9 +1,72 @@
 /**
- * @backburner/web — React SPA (Phase 0 stub).
+ * @backburner/web — public surface of the SPA's data layer.
  *
  * A pure API consumer: `fetch` + `EventSource` only. Never imports
  * `@backburner/engine` or `@backburner/api`, never touches the database
- * (docs/architecture.md §1, §3). React 18 + Vite land in Phase 5
- * (docs/frontend-brief.md) — no bundler dependencies exist yet.
+ * (docs/architecture.md §1, §3). This module exports the NON-visual
+ * foundation — types, HTTP client, SSE client, the Zustand store, and pure
+ * helpers — that the React components (screens, routing, styling) sit on top
+ * of. The store enforces the live-update discipline in docs/frontend-brief.md
+ * §5 so the UI layer only ever renders store state and dispatches actions.
  */
 export const WEB_PACKAGE_NAME = "@backburner/web";
+
+// Data shapes (api-contract §4/§8 mirror).
+export type {
+  ConnectionState,
+  ErrorEnvelope,
+  EventType,
+  HistoryResponse,
+  HistoryTransition,
+  LifecycleEvent,
+  MockResult,
+  NotificationNotice,
+  PendingAction,
+  SubmitInput,
+  Task,
+  TaskError,
+  TaskFilters,
+  TaskListResponse,
+  TaskStatus,
+} from "./lib/types.js";
+
+// HTTP client.
+export { ApiClient, ApiError } from "./lib/api.js";
+export type { ListOptions } from "./lib/api.js";
+
+// SSE client.
+export { SseClient } from "./lib/sse.js";
+export type { SseClientOptions } from "./lib/sse.js";
+
+// Pure helpers.
+export { compareTasks, matchesFilters, parseSort, sortIds } from "./lib/filters.js";
+export type { ParsedSort, SortDir, SortField } from "./lib/filters.js";
+export { allowedActions } from "./lib/matrix.js";
+export type { AllowedActions } from "./lib/matrix.js";
+
+// Local persistence.
+export {
+  clearStoredKey,
+  getLaneDefault,
+  getLaneDefaults,
+  getStoredKey,
+  setLaneDefault,
+  setStoredKey,
+} from "./lib/storage.js";
+export type { LaneDefaults } from "./lib/storage.js";
+
+// The store.
+export {
+  createBackburnerStore,
+  selectPending,
+  selectUnreadCount,
+  selectVisibleTasks,
+} from "./store/store.js";
+export type {
+  ActionError,
+  AuthStatus,
+  BackburnerStore,
+  ListStatus,
+  StoreActions,
+  StoreState,
+} from "./store/store.js";
