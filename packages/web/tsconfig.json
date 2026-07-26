@@ -1,14 +1,29 @@
+// The SPA's typecheck config. Unlike engine/api/e2e this project does NOT
+// participate in the root `tsc -b` graph: Vite owns the build, so TypeScript
+// here is a pure checker (`noEmit`) on bundler resolution — exactly the switch
+// the previous version of this file anticipated. Root `npm run typecheck`
+// invokes this package's own `typecheck` script after the `tsc -b` pass; see
+// the root package.json.
+//
+// Relative imports in src/lib and src/store carry `.js` extensions (a legacy of
+// the NodeNext config this replaced). Both TypeScript's bundler resolution and
+// Vite substitute `.ts`/`.tsx` for those, so they are left untouched.
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src",
-    // Browser data layer: EventSource, fetch, localStorage, AbortController,
-    // window come from the DOM lib, not @types/node. Kept on the repo's
-    // NodeNext resolution (so relative imports carry .js) for `tsc -b`
-    // consistency; a future Vite build can switch to bundler resolution.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    // Browser package: EventSource, fetch, localStorage, AbortController and
+    // window come from the DOM lib, never from @types/node.
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": []
+    "types": ["vite/client"],
+
+    // Vite emits; tsc only checks.
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false
   },
-  "include": ["src"]
+  "include": ["src", "test", "vite.config.ts"]
 }

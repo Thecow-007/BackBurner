@@ -38,11 +38,38 @@ export interface Task {
   seeded: boolean;
 }
 
+/**
+ * Aggregate counts, an additive `[EXTENSION]` object on the `GET /tasks`
+ * response (api-contract §6.2, ADR 0018). Every number the sidebar, the
+ * register header and the filter sheet display comes from here — a count
+ * derived client-side from a paginated page would be invented state
+ * (frontend-brief §6.5), so there is no fallback and no estimate.
+ *
+ * Each field has a DIFFERENT filter basis, because a count must always match
+ * the list it opens:
+ *  - `all`         respects from/to; ignores status and lane
+ *  - `matching`    respects every active filter — what the list actually holds
+ *  - `uncollected` ready|failed and not collected; respects lane/from/to
+ *  - `status.*`    respects lane/from/to; ignores the status filter
+ *  - `lane.*`      respects status/from/to; ignores the lane filter
+ *  - `lanes`       the engine's REGISTERED lanes, not a DISTINCT over data,
+ *                  so a user with zero tasks still gets a lane picker
+ */
+export interface Counts {
+  all: number;
+  matching: number;
+  uncollected: number;
+  status: Record<TaskStatus, number>;
+  lane: Record<string, number>;
+  lanes: string[];
+}
+
 /** `GET /tasks` envelope (api-contract §6.2). */
 export interface TaskListResponse {
   tasks: Task[];
   as_of: number;
   next_cursor: string | null;
+  counts?: Counts;
 }
 
 export interface HistoryTransition {

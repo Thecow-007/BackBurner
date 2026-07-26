@@ -25,6 +25,7 @@ import { SseClient } from "../lib/sse.js";
 import { clearStoredKey, getStoredKey, setStoredKey } from "../lib/storage.js";
 import type {
   ConnectionState,
+  Counts,
   HistoryTransition,
   LifecycleEvent,
   NotificationNotice,
@@ -68,6 +69,11 @@ export interface StoreState {
   asOf: number;
   listStatus: ListStatus;
   listError: string | null;
+
+  /** Server-computed aggregate counts for the active filters (ADR 0018).
+   * `null` until the first snapshot lands, or if the server does not send them
+   * — the UI then shows a neutral placeholder and NEVER a fabricated number. */
+  counts: Counts | null;
 
   // Per-task transition timelines (detail screen, §4.4)
   historyById: Map<string, HistoryTransition[]>;
@@ -123,6 +129,7 @@ const initialState = (): StoreState => ({
   asOf: 0,
   listStatus: "idle",
   listError: null,
+  counts: null,
   historyById: new Map(),
   pending: new Map(),
   actionError: null,
@@ -289,6 +296,14 @@ export function createBackburnerStore(baseUrl = ""): StoreApi<BackburnerStore> {
       maxAppliedId = ev.id;
 
       const wasKnown = get().tasksById.has(ev.task_id);
+      // `accepted` is the only event that means the task is new to the SYSTEM.
+      // Any other event on a task we have not seen means it already existed and
+      // the server already counted it — treating that as an arrival would
+      // double-count, and we cannot infer the status it left (a `cancelled`
+      // event could have come from queued or from running). Counts for that
+      // rare path are re-read from the server instead of guessed.
+      const isArrival = ev.type === "accepted";
+      const countable = wasKnown || isArrival;
 
       set((s) => {
         const tasksById = new Map(s.tasksById);
@@ -297,6 +312,7 @@ export function createBackburnerStore(baseUrl = ""): StoreApi<BackburnerStore> {
         tasksById.set(task.id, task);
 
         const listOrder = reindex(s.listOrder, task, s.filters, tasksById);
+        const counts = countable ? adjustCounts(s.counts, prev, task, s.filters) : s.counts;
 
         // Append a best-effort timeline entry if this task's detail is loaded.
         let historyById = s.historyById;
@@ -316,7 +332,7 @@ export function createBackburnerStore(baseUrl = ""): StoreApi<BackburnerStore> {
         const notice = noticeFor(ev);
         const notifications = notice ? [notice, ...s.notifications].slice(0, 50) : s.notifications;
 
-        return { tasksById, listOrder, historyById, notifications };
+        return { tasksById, listOrder, historyById, notifications, counts };
       });
 
       const action = confirmedAction(ev.type);
@@ -332,6 +348,26 @@ export function createBackburnerStore(baseUrl = ""): StoreApi<BackburnerStore> {
           .catch(() => {
             /* transient; the next event or a resync will reconcile */
           });
+        // Same rare path, same justification: we cannot maintain counts for a
+        // task whose previous status we never saw, so we re-read them rather
+        // than show a number we cannot stand behind.
+        if (!isArrival) void refreshCounts();
+      }
+    }
+
+    /** Re-read just the counts for the active filters. Single-flight: a burst
+     * of unknown-task events produces one request, not one per event. */
+    let countsRefreshInFlight = false;
+    async function refreshCounts(): Promise<void> {
+      if (!api || countsRefreshInFlight) return;
+      countsRefreshInFlight = true;
+      try {
+        const snap = await api.listTasks(get().filters, { limit: 1 });
+        if (snap.counts) set({ counts: snap.counts });
+      } catch {
+        /* transient; the next snapshot or resync will reconcile */
+      } finally {
+        countsRefreshInFlight = false;
       }
     }
 
@@ -364,7 +400,11 @@ export function createBackburnerStore(baseUrl = ""): StoreApi<BackburnerStore> {
         const tasksById = new Map(s.tasksById);
         tasksById.set(merged.id, merged);
         const listOrder = reindex(s.listOrder, merged, s.filters, tasksById);
-        return { tasksById, listOrder };
+        // Only a task we already knew can move the counters here. Learning of a
+        // task for the first time via a detail fetch is not an arrival — the
+        // server counted it in the snapshot whether or not it was on our page.
+        const counts = prev ? adjustCounts(s.counts, prev, merged, s.filters) : s.counts;
+        return { tasksById, listOrder, counts };
       });
     }
 
@@ -415,6 +455,9 @@ export function createBackburnerStore(baseUrl = ""): StoreApi<BackburnerStore> {
             listOrder: order,
             nextCursor: snap.next_cursor,
             asOf: snap.as_of,
+            // Authoritative: every snapshot re-bases the counters, so any local
+            // adjustment drift cannot accumulate across a filter change.
+            counts: snap.counts ?? null,
             listStatus: "live" as ListStatus,
           };
         });
@@ -567,6 +610,89 @@ export function createBackburnerStore(baseUrl = ""): StoreApi<BackburnerStore> {
       dismissActionError: () => set({ actionError: null }),
     };
   });
+}
+
+// ── Keeping counts truthful between snapshots (ADR 0018) ────────────────────
+//
+// A count must always match the list it opens, and snapshots only happen on
+// hydration and filter changes — so between them the sidebar would drift as
+// events land. It is NOT drift-prone to fix that locally: the event stream is
+// complete for this user (every status change for every one of their tasks
+// produces an event), so a known total plus a known delta is an EXACT result,
+// not a client-side estimate of the kind frontend-brief §6.5 forbids. This is
+// the same class of maintenance `reindex` already does for `listOrder`.
+//
+// The fiddly part is that each field has its own filter basis, so a task
+// moving in or out of scope counts for some fields and not others.
+
+function subsetFilters(filters: TaskFilters, keys: Array<keyof TaskFilters>): TaskFilters {
+  const out: TaskFilters = {};
+  for (const key of keys) {
+    const value = filters[key];
+    if (value !== undefined) out[key] = value as never;
+  }
+  return out;
+}
+
+/** ready|failed and not yet collected — the register header's "N to collect". */
+function isUncollected(task: Task): boolean {
+  return (task.status === "ready" || task.status === "failed") && !task.collected;
+}
+
+function bump(target: Record<string, number>, key: string, delta: number): void {
+  target[key] = Math.max(0, (target[key] ?? 0) + delta);
+}
+
+/**
+ * Move the counters for one task's before/after states. `prev` undefined means
+ * the task is new to us; `next` undefined means it left the store. Returns a
+ * fresh object so React sees the change; returns `counts` untouched when there
+ * is nothing to count against yet.
+ */
+export function adjustCounts(
+  counts: Counts | null,
+  prev: Task | undefined,
+  next: Task | undefined,
+  filters: TaskFilters
+): Counts | null {
+  if (!counts) return counts;
+  if (!prev && !next) return counts;
+
+  const dateOnly = subsetFilters(filters, ["from", "to"]);
+  const laneDate = subsetFilters(filters, ["lane", "from", "to"]);
+  const statusDate = subsetFilters(filters, ["status", "from", "to"]);
+
+  const out: Counts = {
+    ...counts,
+    status: { ...counts.status },
+    lane: { ...counts.lane },
+  };
+
+  // `all` — respects from/to only, so only arrivals and departures move it.
+  if (prev && matchesFilters(prev, dateOnly)) out.all = Math.max(0, out.all - 1);
+  if (next && matchesFilters(next, dateOnly)) out.all += 1;
+
+  // `status.*` — respects lane/from/to, ignores the status filter.
+  if (prev && matchesFilters(prev, laneDate)) bump(out.status, prev.status, -1);
+  if (next && matchesFilters(next, laneDate)) bump(out.status, next.status, +1);
+
+  // `lane.*` — respects status/from/to, ignores the lane filter.
+  if (prev && matchesFilters(prev, statusDate)) bump(out.lane, prev.lane, -1);
+  if (next && matchesFilters(next, statusDate)) bump(out.lane, next.lane, +1);
+
+  // `uncollected` — same basis as `status.*`.
+  if (prev && isUncollected(prev) && matchesFilters(prev, laneDate)) {
+    out.uncollected = Math.max(0, out.uncollected - 1);
+  }
+  if (next && isUncollected(next) && matchesFilters(next, laneDate)) {
+    out.uncollected += 1;
+  }
+
+  // `matching` — respects every active filter, exactly like `listOrder`.
+  if (prev && matchesFilters(prev, filters)) out.matching = Math.max(0, out.matching - 1);
+  if (next && matchesFilters(next, filters)) out.matching += 1;
+
+  return out;
 }
 
 /** Pull the event's non-derivable payload into a history `meta` object,

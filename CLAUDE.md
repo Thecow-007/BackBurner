@@ -9,7 +9,8 @@ BackBurner is a background job runner: submit a job, get a short recyclable hand
 | `docs/architecture.md` | Engine and system design: schema, handle allocation, state machine, dispatch, cancellation, recovery, engine public surface |
 | `docs/api-contract.md` | The entire HTTP surface: endpoints, task object, error envelope, SSE wire format, handle resolution, spec-ambiguity resolutions |
 | `docs/test-plan.md` | All test suites: the 9 criteria tests, supplemental e2e, engine unit tests, harness, timing constants, CI, flakiness policy |
-| `docs/frontend-brief.md` | The SPA: screens, store discipline, action matrix, notifications, responsive rules |
+| `docs/frontend-brief.md` | The SPA's **behaviour**: screens, routes, store discipline, action matrix, notifications, responsive rules |
+| `docs/ui-spec.md` | The SPA's **appearance**: tokens, components, layout grids, copy register, the mark. Where the two disagree, the frontend brief wins on behaviour and the UI spec wins on appearance |
 | `docs/build-plan.md` | Build phases, gates, working agreements, commit conventions |
 | `docs/deployment.md` | Production topology, deploy pipeline, Cloudflare, secrets |
 | `docs/decisions/` | ADRs — the rationale behind every hard-to-reverse choice |

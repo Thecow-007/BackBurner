@@ -4,12 +4,17 @@
 // order and can resolve @backburner/engine's declarations for
 // @backburner/api without a manual build step first. See the "TypeScript
 // typecheck strategy" choice called out in the Phase 0 report.
+//
+// @backburner/web is deliberately ABSENT from this graph. Since Phase 5 it is a
+// Vite application: Vite owns the build and its tsconfig is a pure `noEmit`
+// checker on bundler resolution, which cannot be a `tsc -b` project reference
+// (composite requires emit). Root `npm run typecheck` runs that package's own
+// `typecheck` script immediately after this build, so web is still covered.
 {
   "files": [],
   "references": [
     { "path": "packages/engine" },
     { "path": "packages/api" },
-    { "path": "packages/web" },
     { "path": "packages/e2e" }
   ]
 }

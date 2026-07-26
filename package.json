@@ -11,9 +11,9 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
-    "typecheck": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json && npm run typecheck --workspace=@backburner/web",
     "test": "npm run test:unit && npm run test:e2e",
-    "test:unit": "npm run test --workspace=@backburner/engine",
+    "test:unit": "npm run test --workspace=@backburner/engine && npm run test --workspace=@backburner/web",
     "test:e2e": "node scripts/run-e2e.mjs",
     "test:criteria": "npm run test:criteria --workspace=@backburner/e2e",
     "test:supplemental": "npm run test:supplemental --workspace=@backburner/e2e",

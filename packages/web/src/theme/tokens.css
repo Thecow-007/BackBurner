@@ -1,0 +1,139 @@
+/*
+ * The design system, verbatim from docs/ui-spec.md §1. This file is the ONLY
+ * place a colour literal may appear in the SPA — components and screens read
+ * var(--…) and never author raw hex. Dark only; there is no light theme and
+ * none is planned (ui-spec §1.1).
+ *
+ * Ember is NOT a status. It is permitted in exactly three places: the wordmark,
+ * the primary action button, and the degraded-connection state. It appears
+ * nowhere in the task table and nowhere in the timeline. Running-orange beside
+ * failed-red made a healthy screen read as an alarming one; that is why running
+ * is blue.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+  --bg-app: #0f0b09; /* page / register ground */
+  --bg-panel: #120d0a; /* sidebar, detail pane, cards */
+  --bg-raised: #16100d; /* header bars, JSON blocks, hover fill */
+  --bg-group: #140e0b; /* list group headers (LIVE, HISTORY) */
+  --scrim: rgba(10, 6, 4, 0.72); /* drawer / sheet backdrop */
+
+  /* ── Lines ────────────────────────────────────────────────────────────── */
+  --line: #2b1e18; /* panel borders, dividers */
+  --line-quiet: #1d1512; /* row separators */
+  --line-strong: #4a3830; /* active input borders, sheet top edge, dashed markers */
+
+  /* ── Text ─────────────────────────────────────────────────────────────── */
+  --text: #f5ece4; /* primary */
+  --text-dim: #a08b7e; /* secondary / metadata — >=4.5:1 on all surfaces */
+  --text-quiet: #9a8172; /* micro-labels, counts — dimmest legal tier */
+  --text-mono-body: #c9b6a8; /* JSON payload bodies */
+  --text-error: #ff8a7a; /* error text inside rows and cards */
+  /* #6b544a is RETIRED for text (fails AA) — hairlines and decoration only. */
+  --hairline: #6b544a;
+
+  /* ── Brand / action (ember) ───────────────────────────────────────────── */
+  --ember: #ff5a1f; /* wordmark, primary button, degraded connection */
+  --ember-hi: #ffb347; /* wordmark gradient top only */
+  --on-ember: #170d08; /* text on ember fills */
+
+  /* ── Status ───────────────────────────────────────────────────────────── */
+  --st-queued: #9a8b80;
+  --st-running: #58a6ff; /* the only animated status */
+  --st-ready: #5fd08a;
+  --st-failed: #ff4438;
+  --st-cancelled: #8a7a72;
+
+  /*
+   * Derived chip recipes (ui-spec §1.1): background S+'16', border S+'3d',
+   * colour S. Pre-resolved here so no component ever composes a colour.
+   */
+  --chip-queued-bg: #9a8b8016;
+  --chip-queued-border: #9a8b803d;
+  --chip-ready-bg: #5fd08a16;
+  --chip-ready-border: #5fd08a3d;
+  --chip-failed-bg: #ff443816;
+  --chip-failed-border: #ff44383d;
+  --chip-cancelled-bg: #8a7a7216;
+  --chip-cancelled-border: #8a7a723d;
+  /* Running is the exception: solid fill, dark text, weight 700, pulsing. */
+  --chip-running-bg: #58a6ff;
+  --chip-running-text: #06131f;
+
+  /* Timeline node halo: S at 22 alpha. */
+  --halo-queued: #9a8b8022;
+  --halo-running: #58a6ff22;
+  --halo-ready: #5fd08a22;
+  --halo-failed: #ff443822;
+  --halo-cancelled: #8a7a7222;
+
+  /* ── Buttons ──────────────────────────────────────────────────────────── */
+  --btn-secondary-border: #3a2c25;
+  /* Destructive / retry */
+  --btn-danger-border: #6b1f16;
+  --btn-danger-bg: #2a100c;
+  --btn-danger-text: #ff7a55;
+  /* Collect-on-ready — the one status whose action carries its own colour */
+  --btn-collect-border: #2f5c48;
+  --btn-collect-bg: #0f2019;
+  --btn-collect-text: #5fd08a;
+
+  /* ── Connection indicator (ui-spec §3.9) ──────────────────────────────── */
+  --conn-live-bg: #0d1613;
+  --conn-live-border: #234036;
+  --conn-reconnecting-bg: #1b1208;
+  --conn-reconnecting-border: #4a3218;
+
+  /* ── Misc component tokens ────────────────────────────────────────────── */
+  --seed-border: #33261f;
+  --skeleton-strong: #241a15;
+  --skeleton-quiet: #1d1512;
+  --live-rail: #58a6ff; /* 3px gutter rail on live rows */
+  --live-wash: linear-gradient(90deg, rgba(88, 166, 255, 0.1), transparent 55%);
+  --backoff-dash: repeating-linear-gradient(180deg, #4a3830 0 4px, transparent 4px 8px);
+
+  /* ── Type (ui-spec §1.2) ──────────────────────────────────────────────── */
+  /* Archivo for UI prose. IBM Plex Mono for ALL data: if a value comes from
+   * the API it is monospace; if the interface says it in its own voice it is
+   * Archivo. */
+  --font-ui: "Archivo Variable", "Archivo", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --fs-micro: 10px; /* uppercase hairline labels, tracking below */
+  --fs-micro-lg: 10.5px;
+  --fs-mono-meta: 11px;
+  --fs-mono-meta-lg: 12px;
+  --fs-row: 12.5px;
+  --fs-body: 13px;
+  --fs-body-lg: 13.5px;
+  --fs-row-handle: 13.5px;
+  --fs-detail-handle: 28px;
+  --fs-duration: 30px;
+  --tracking-micro: 0.14em;
+
+  /* ── Space, radius, layout (ui-spec §1.3, §2) ─────────────────────────── */
+  --s-1: 4px;
+  --s-2: 6px;
+  --s-3: 8px;
+  --s-4: 10px;
+  --s-5: 12px;
+  --s-6: 14px;
+  --s-7: 16px;
+  --s-8: 18px;
+  --s-9: 20px;
+  --s-10: 22px;
+
+  --r-input: 3px;
+  --r-btn: 4px;
+  --r-panel: 6px;
+  --r-chip: 999px;
+  --r-sheet: 12px;
+
+  --sidebar-w: 230px;
+  --detail-w: 446px;
+  --row-h: 34px; /* density is a feature — do not loosen */
+  --tap: 44px; /* minimum touch target */
+}
