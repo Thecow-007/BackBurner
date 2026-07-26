@@ -1,0 +1,52 @@
+/*
+ * Status chip — ui-spec §3.1. Fill, border and text arrive as the
+ * `--chip-fill` / `--chip-line` / `--chip-ink` custom properties the component
+ * sets from `lib/status.ts`; every one of them resolves to a token.
+ */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: var(--r-chip);
+  background: var(--chip-fill);
+  border: 1px solid var(--chip-line);
+  color: var(--chip-ink);
+}
+
+.glyph {
+  /* The glyph carries no metrics of its own — it must not stretch the chip. */
+  line-height: 1;
+}
+
+/* Register rows and mobile cards. */
+.row {
+  font-size: var(--fs-mono-meta);
+  padding: 3px 9px;
+}
+
+/* The detail header, where the chip sits beside a 26–30px handle. */
+.detail {
+  font-size: var(--fs-mono-meta-lg);
+  gap: 7px;
+  padding: 5px 11px;
+}
+
+/*
+ * Running: the one status with a solid fill and the only animated variant.
+ * `global()` is load-bearing — CSS Modules scopes a bare animation name, which
+ * would silently detach this from the `bb-pulse` keyframe in theme/global.css.
+ * That file also disables it under prefers-reduced-motion.
+ */
+.solid {
+  font-weight: 700;
+  animation: global(bb-pulse) 1.6s ease-in-out infinite;
+}
+
+/* Collected and terminal chips (ui-spec §1.1 "derived recipes"). */
+.muted {
+  opacity: 0.72;
+}

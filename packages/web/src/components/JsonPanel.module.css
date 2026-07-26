@@ -1,0 +1,72 @@
+/*
+ * ui-spec §3.12. Wide payloads scroll inside the block; the page never scrolls
+ * sideways (§2), which is why the block owns `overflow-x` and a `min-width: 0`
+ * wrapper rather than growing its container.
+ */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-micro);
+  text-transform: uppercase;
+  color: var(--text-quiet);
+}
+
+.copy,
+.toggle {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-dim);
+  background: none;
+  border: 0;
+  padding: var(--s-1) var(--s-2);
+  border-radius: var(--r-input);
+}
+
+.copy:hover,
+.toggle:hover {
+  color: var(--text);
+  background: var(--bg-raised);
+}
+
+.toggle {
+  align-self: flex-start;
+  padding-left: 0;
+}
+
+.block {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  padding: var(--s-5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  line-height: 1.65;
+  color: var(--text-mono-body);
+  white-space: pre;
+}
+
+/* Error bodies wrap rather than scroll, so no part of a failure can end up off
+ * screen (ui-spec §3.12: error text is never truncated). */
+.wrapBlock {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: hidden;
+}

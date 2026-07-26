@@ -24,6 +24,25 @@ export function formatDuration(ms: number): string {
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
 }
 
+/**
+ * A LIVE duration — always `M:SS`, even below a minute (`0:14`).
+ *
+ * The design draws these two forms differently on purpose, and the difference
+ * carries meaning: a ticking counter reads as a clock counting up, so it must
+ * not change shape as it crosses a minute, while a finished duration reads as a
+ * measurement and earns its tenth of a second. Hence `0:14 WAITING` and
+ * `5:20 ELAPSED` here, against `9.8s TOTAL` from `formatDuration` above.
+ */
+export function formatElapsedClock(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "0:00";
+  const whole = Math.floor(ms / 1000);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const seconds = whole % 60;
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
+}
+
 /** The duration between two instants, for the detail header's slot. */
 export function durationBetween(sinceIso: string, untilIso: string | null, now: number): number {
   const since = Date.parse(sinceIso);

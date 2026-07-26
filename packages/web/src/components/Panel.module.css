@@ -1,0 +1,59 @@
+/*
+ * ui-spec §3.11, §3.12. The header fill and the error rail are clipped by the
+ * panel radius, so the surface needs `overflow: hidden`.
+ */
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-6);
+  border-bottom: 1px solid var(--line);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-micro);
+  text-transform: uppercase;
+  color: var(--text-quiet);
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-dim);
+}
+
+.body {
+  padding: var(--s-5) var(--s-6);
+  min-width: 0;
+}
+
+/* The red-railed variant: a failure always arrives inside a panel that names
+ * it, never as a blank pane (ui-spec §3.11). */
+.error {
+  border-color: var(--btn-danger-border);
+  border-left: 3px solid var(--st-failed);
+}
+
+.error .header {
+  background: var(--bg-raised);
+  border-bottom-color: var(--btn-danger-border);
+}
+
+.error .label {
+  color: var(--text-error);
+}

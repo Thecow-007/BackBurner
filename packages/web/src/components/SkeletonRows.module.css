@@ -1,0 +1,43 @@
+/*
+ * ui-spec §3.11. Skeleton rows stand in for real rows at the real row height,
+ * so the register does not reflow when the snapshot lands. No spinner, and no
+ * animation at all — nothing here needs `prefers-reduced-motion` handling
+ * because nothing here moves.
+ */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+}
+
+.row,
+.card {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  padding: 0 var(--s-7);
+  border-bottom: 1px solid var(--line-quiet);
+}
+
+.row {
+  height: var(--row-h);
+}
+
+.card {
+  min-height: var(--tap);
+}
+
+.strong,
+.quiet {
+  height: 9px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.strong {
+  background: var(--skeleton-strong);
+}
+
+.quiet {
+  background: var(--skeleton-quiet);
+}

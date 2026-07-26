@@ -227,12 +227,13 @@ The approved design did not cover the following. Each was resolved during the Ph
 
 | Gap | Resolution |
 |---|---|
-| Sidebar identity chip showed a username (`daniel`) and avatar initials | **Dropped.** No endpoint can tell the SPA who it is; a name would be invented state. The chip shows the masked key alone (`bb_9f2c…6b54`). See ADR 0021. |
+| Sidebar identity chip showed a username (`daniel`) and avatar initials | **Dropped.** No endpoint can tell the SPA who it is; a name would be invented state. The chip shows the masked key alone (`bb_9f2c…6b54`). See ADR 0020. |
+| The queued state note read `queued behind 3 tasks · attempt budget 3` | **Queue position dropped** — it is not derivable from any endpoint. The note keeps `attempt budget 3`, which is just `max_attempts`. Same reasoning as ADR 0020. |
 | Every count in the design (sidebar totals, `4 running · 1 to collect`, `Show 312 tasks`, `10 of 312`, `LIVE · 2` / `HISTORY · 310`) | **Built.** Additive `counts` object on `GET /tasks`; see ADR 0018 and `api-contract.md`. Six fields, each with its own filter basis. |
 | Submit form's lane buttons and the sidebar LANES list had no source | **Built into counts** as `counts.lanes` — the engine's *registered* lanes, so a user with zero tasks still gets a working lane picker. |
 | Date-range (`from`/`to`) filters — in `frontend-brief.md` §4.2, on no design screen | **Built**, in the mobile filter sheet and a desktop filter affordance, in the established idiom. |
 | Desktop could only sort by `created_at` (the column header) | **Built** a created ↔ updated field switch on desktop, matching the mobile sheet's SORT control. |
 | Where `/submit` renders in three-pane view | Replaces the register + detail area as a single centred panel; the sidebar persists. |
 | Detail-screen **loading** and **404 not-found** states | Built in the established idiom — skeleton identity block for loading; mono error panel plus a link back to the register for 404 (`frontend-brief.md` §4.4 copy). |
-| Whether Notifications is a route or an overlay | **Overlay.** Anchored popover on desktop, full-width drawer on mobile, opened from the sidebar nav item and the mobile header bell. No `/notifications` URL. See ADR 0022. |
+| Whether Notifications is a route or an overlay | **Overlay.** Anchored popover on desktop, full-width drawer on mobile, opened from the sidebar nav item and the mobile header bell. No `/notifications` URL — `frontend-brief.md` §2 already places the notification layer outside routing, so this needs no ADR. |
 | Infinite scroll (design) vs. a "Load more" button (`frontend-brief.md` §4.2) | **Infinite scroll**, per the design. See ADR 0019. |

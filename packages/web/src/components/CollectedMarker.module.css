@@ -1,0 +1,12 @@
+/* Collected marker — ui-spec §3.2. Quiet, dotted, never abbreviated. */
+
+.marker {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.2;
+  color: var(--text-dim);
+  /* The dotted rule is what separates the marker from the row's other prose —
+   * it reads as an annotation on the task, not as a second status. */
+  border-bottom: 1px dotted var(--line-strong);
+  white-space: nowrap;
+}

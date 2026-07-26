@@ -1,0 +1,73 @@
+/*
+ * ui-spec §3.6. The slot always holds a duration, so the panel keeps its shape
+ * across every status — nothing appears, disappears or jumps as a task moves.
+ * There is no progress bar here and there is none anywhere: the engine cannot
+ * know worker progress, so the interface never implies it (ui-spec §0).
+ */
+
+.slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-5);
+}
+
+.readout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  min-width: 0;
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-duration);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* Collected and cancelled readouts read back at reduced opacity (ui-spec §1.1).
+ * The label stays at full strength — it is the only thing naming the number. */
+.muted {
+  opacity: 0.6;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-micro);
+  text-transform: uppercase;
+  color: var(--text-quiet);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-3);
+}
+
+.terminal {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.note {
+  margin: 0;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line-quiet);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-dim);
+  text-wrap: pretty;
+}

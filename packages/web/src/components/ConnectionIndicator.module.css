@@ -1,0 +1,104 @@
+/*
+ * Connection indicator — ui-spec §3.9.
+ *
+ * Every state carries a 1px border, transparent where the design draws none,
+ * so the block's outer box is identical in all four: the sidebar must not
+ * reflow at the moment the stream drops.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro-lg);
+  line-height: 1.3;
+  border: 1px solid transparent;
+  border-radius: var(--r-input);
+  padding: 7px 10px;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  /* The dot is the state's own colour, always — never a second hue to decode. */
+  background: currentColor;
+}
+
+/*
+ * `global()` is load-bearing: CSS Modules scopes a bare animation name, which
+ * would silently detach these from the `bb-pulse` keyframe in theme/global.css.
+ * That file also disables them under prefers-reduced-motion — the pulse rate is
+ * the only thing that escalates here, and the words carry the state without it.
+ */
+
+.live {
+  color: var(--st-ready);
+  background: var(--conn-live-bg);
+  border-color: var(--conn-live-border);
+}
+
+.live .dot {
+  animation: global(bb-pulse) 2.2s ease-in-out infinite;
+}
+
+/* `connecting` shares the degraded treatment; only the word differs. */
+.connecting,
+.reconnecting {
+  color: var(--ember);
+  background: var(--conn-reconnecting-bg);
+  border-color: var(--conn-reconnecting-border);
+}
+
+.connecting .dot,
+.reconnecting .dot {
+  animation: global(bb-pulse) 1s ease-in-out infinite;
+}
+
+/* The loudest thing in the sidebar: solid ember, two lines, fastest pulse. The
+ * design gives it no border, so it trades that 1px back for 1px of padding and
+ * the outer box stays the size the other states occupy. */
+.stale {
+  color: var(--on-ember);
+  background: var(--ember);
+  padding: var(--s-3) 10px;
+  border-width: 0;
+}
+
+.stale .line {
+  font-weight: 700;
+}
+
+.stale .dot {
+  animation: global(bb-pulse) 0.8s ease-in-out infinite;
+}
+
+.detail {
+  font-weight: 600;
+}
+
+/*
+ * Mobile: a full-width bar directly under the header (ui-spec §3.9, 5d). Square
+ * edges and the header's own gutter, so it reads as part of the chrome rather
+ * than as a card floating in the list. Lines sit side by side and wrap only
+ * when the viewport makes them.
+ */
+.bar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--s-3);
+  row-gap: var(--s-1);
+  border-radius: 0;
+  border-left-width: 0;
+  border-right-width: 0;
+  padding: var(--s-4) var(--s-7);
+}

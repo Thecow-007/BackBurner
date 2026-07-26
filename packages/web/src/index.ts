@@ -14,6 +14,7 @@ export const WEB_PACKAGE_NAME = "@backburner/web";
 // Data shapes (api-contract §4/§8 mirror).
 export type {
   ConnectionState,
+  Counts,
   ErrorEnvelope,
   EventType,
   HistoryResponse,
@@ -44,6 +45,22 @@ export type { ParsedSort, SortDir, SortField } from "./lib/filters.js";
 export { allowedActions } from "./lib/matrix.js";
 export type { AllowedActions } from "./lib/matrix.js";
 
+// Presentation derivation — the single source for how a status LOOKS, paired
+// with matrix.ts as the single source for what it PERMITS.
+export { durationReadout, isLive, stateNote, statusPresentation, STATUS_ORDER } from "./lib/status.js";
+export type { DurationReadout, StatusPresentation } from "./lib/status.js";
+export {
+  durationBetween,
+  formatAttempts,
+  formatClock,
+  formatDuration,
+  formatElapsedClock,
+  formatRelative,
+  humanizeMs,
+  maskKey,
+  prettyJson,
+} from "./lib/format.js";
+
 // Local persistence.
 export {
   clearStoredKey,
@@ -57,6 +74,7 @@ export type { LaneDefaults } from "./lib/storage.js";
 
 // The store.
 export {
+  adjustCounts,
   createBackburnerStore,
   selectPending,
   selectUnreadCount,

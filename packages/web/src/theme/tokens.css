@@ -81,6 +81,11 @@
   --btn-collect-bg: #0f2019;
   --btn-collect-text: #5fd08a;
 
+  /* Error-tinted ground for the failed toast and the detail error panel — a
+   * red-shifted --bg-raised, so failure reads as a distinct surface rather than
+   * as ordinary chrome wearing a red border. */
+  --bg-error: #1c0e0b;
+
   /* ── Connection indicator (ui-spec §3.9) ──────────────────────────────── */
   --conn-live-bg: #0d1613;
   --conn-live-border: #234036;
@@ -89,6 +94,11 @@
 
   /* ── Misc component tokens ────────────────────────────────────────────── */
   --seed-border: #33261f;
+  /* The resting detail pane's ember-bar glyph: the mark's shape in a dim
+   * neutral, not a washed-out orange — a faded primary colour in an empty pane
+   * reads as a disabled control rather than an invitation. */
+  --glyph-resting-top: #33261f;
+  --glyph-resting-bottom: #221812;
   --skeleton-strong: #241a15;
   --skeleton-quiet: #1d1512;
   --live-rail: #58a6ff; /* 3px gutter rail on live rows */

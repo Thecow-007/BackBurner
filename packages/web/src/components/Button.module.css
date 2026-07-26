@@ -1,0 +1,110 @@
+/*
+ * Button recipes: docs/ui-spec.md §1.1 (variants), §3.7 (sizes, pending), §4
+ * (touch targets, visible focus). Every colour arrives as var(--token) —
+ * theme/tokens.css is the only file in the SPA where a literal may appear.
+ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-btn);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+}
+
+/* ── Sizes ───────────────────────────────────────────────────────────────── */
+
+/* Desktop floor is 36 tall (ui-spec §4); no token carries button heights. */
+.default {
+  min-height: 36px;
+  padding: 0 var(--s-6);
+  font-size: var(--fs-body);
+}
+
+/* The mobile / sheet size — clears the 44px touch minimum with room to spare.
+ * 15px is the top of the 13–15 button range in ui-spec §1.2; no --fs-* token
+ * lands on that step. */
+.large {
+  min-height: 48px;
+  padding: 0 var(--s-8);
+  font-size: 15px;
+}
+
+/* ── Variants ────────────────────────────────────────────────────────────── */
+
+/* Ember is brand + primary action + degraded connection, and nothing else. */
+.primary {
+  border-color: var(--ember);
+  background: var(--ember);
+  color: var(--on-ember);
+}
+
+.secondary {
+  border-color: var(--btn-secondary-border);
+  color: var(--text);
+}
+
+/* The dismiss affordance in confirmations: borderless, dim, deliberately the
+ * lighter-weight of the two choices (ui-spec §3.8). */
+.quiet {
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+.danger {
+  border-color: var(--btn-danger-border);
+  background: var(--btn-danger-bg);
+  color: var(--btn-danger-text);
+}
+
+/* Ready is the one status whose action carries its own colour — collecting a
+ * ready result is the happy path (ui-spec §1.1). */
+.collect {
+  border-color: var(--btn-collect-border);
+  background: var(--btn-collect-bg);
+  color: var(--btn-collect-text);
+}
+
+/* ── States ──────────────────────────────────────────────────────────────── */
+
+/* Pending is a text change with a DASHED border, never a spinner and never
+ * opacity alone (ui-spec §3.7). Declared after the variants and at higher
+ * specificity so it overrides whichever recipe the button was wearing. */
+.button.pending {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: transparent;
+  color: var(--text-dim);
+}
+
+/* Truly unavailable — the native attribute is what conveys it; the dimming is
+ * the redundant visual, not the only signal. */
+.button:disabled {
+  opacity: 0.5;
+}
+
+.button:hover:not(:disabled):not([aria-disabled="true"]) {
+  filter: brightness(1.12);
+}
+
+/* Transparent-background variants need a fill to register a hover at all. */
+.secondary:hover:not(:disabled):not([aria-disabled="true"]),
+.quiet:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--bg-raised);
+}
+
+.quiet:hover:not(:disabled):not([aria-disabled="true"]) {
+  color: var(--text);
+}
+
+/* global.css draws the ring; this only keeps its radius on the button scale. */
+.button:focus-visible {
+  border-radius: var(--r-btn);
+}

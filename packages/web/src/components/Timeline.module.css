@@ -1,0 +1,167 @@
+/*
+ * Timeline — docs/ui-spec.md §3.5, transcribed from the approved design.
+ * Every colour is a token; the literal px values below (9px dot, 11px rail,
+ * 2px dash, 22px segment, 1px hairlines) are design values with no token.
+ *
+ * No animation: ui-spec §1.3 permits exactly two in the whole app (pulse on
+ * the running chip, spin on the scroll indicator) and neither is here.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* "TIMELINE · 3 ATTEMPTS" — the caller composes the copy. */
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-micro);
+  text-transform: uppercase;
+  color: var(--text-quiet);
+  padding-bottom: var(--s-4);
+}
+
+.groups,
+.nodes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Attempt group header: label · hairline · per-attempt duration ────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin: var(--s-5) 0 var(--s-3);
+}
+
+.group:first-child .header {
+  margin-top: 0;
+}
+
+.headerLabel {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-micro);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.headerDuration {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-quiet);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Node: dot on the rail, event type, meta line, timestamp ──────────────── */
+
+/* The node owns its backoff marker, so it is a block, not the flex row. */
+.node {
+  display: block;
+}
+
+.row {
+  display: flex;
+  gap: var(--s-5);
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: none;
+  width: 11px;
+}
+
+/* background + halo are set per node from statusPresentation(to_status). */
+.dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.stem {
+  flex: 1;
+  width: 1px;
+  background: var(--line);
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  margin-top: -3px;
+  padding-bottom: var(--s-5);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.type {
+  font-family: var(--font-mono);
+  font-size: var(--fs-row);
+  color: var(--text);
+}
+
+.time {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro-lg);
+  color: var(--text-quiet);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/*
+ * The meta line carries engine text (`reason`, `summary`) verbatim. It wraps —
+ * it never ellipses, never truncates, and never breaks out of the pane, so a
+ * long URL inside a reason stays fully readable (ui-spec §0, §3.12).
+ */
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  line-height: 1.5;
+  color: var(--text-dim);
+  margin-top: 2px;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+/* ── Backoff wait, between attempts ───────────────────────────────────────── */
+
+.wait {
+  display: flex;
+  align-items: center;
+  gap: var(--s-6);
+  /* 5px left aligns the dashed segment onto the node rail. */
+  padding: 5px 0 5px 5px;
+}
+
+.dash {
+  width: 2px;
+  height: 22px;
+  flex: none;
+  background: var(--backoff-dash);
+}
+
+.waitLabel {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-dim);
+}

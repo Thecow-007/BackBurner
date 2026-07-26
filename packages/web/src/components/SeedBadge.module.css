@@ -1,0 +1,17 @@
+/* Seed badge — ui-spec §3.3. It marks synthetic history; it is not a warning. */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  /* 9.5px and .12em are the design's own values for this badge alone; neither
+   * has a token, and neither should acquire one for a single marker. */
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  line-height: 1.4;
+  color: var(--text-dim);
+  border: 1px solid var(--seed-border);
+  border-radius: 2px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}

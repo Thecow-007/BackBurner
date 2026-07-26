@@ -1,0 +1,30 @@
+/*
+ * Desktop inline confirm, docs/ui-spec.md §3.8: --bg-raised on a --line-strong
+ * hairline, question in Archivo 13.5, two buttons right-aligned.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-5);
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-btn);
+}
+
+.question {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body-lg);
+  line-height: 1.5;
+  color: var(--text);
+  /* Two-line questions break where the sentence does, not where the box does. */
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-3);
+}

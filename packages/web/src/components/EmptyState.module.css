@@ -1,0 +1,64 @@
+/*
+ * ui-spec §3.11. "No tasks yet" and "No tasks match these filters" must not
+ * read alike — one is a new key, the other a filter mistake — so the heading
+ * copy, the body (prose vs. the filters echoed in mono) and the action tone
+ * (ember vs. secondary) all come from the caller.
+ */
+
+.empty {
+  flex: 1 1 auto;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-6);
+  padding: var(--s-10);
+  text-align: center;
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  text-wrap: pretty;
+}
+
+/* The resting detail pane is one quiet line under the mark, not a headline —
+ * it is the interface waiting, not reporting. */
+.resting {
+  margin: 0;
+  max-width: 280px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+.body {
+  max-width: 300px;
+  font-size: var(--fs-body-lg);
+  line-height: 1.55;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
+.action {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+/* The mark (ui-spec §6), dimmed: hot end at the bottom, and it never fills or
+ * depletes. One of ember's three permitted uses. */
+.emberBar {
+  width: 10px;
+  height: 30px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, var(--ember-hi), var(--ember));
+  opacity: 0.3;
+}

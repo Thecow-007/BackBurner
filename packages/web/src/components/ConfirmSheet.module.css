@@ -1,0 +1,62 @@
+/*
+ * Mobile bottom sheet, docs/ui-spec.md §3.8: --bg-panel, a --line-strong top
+ * edge, --r-sheet on the top corners only, a 40x4 grab handle, then two 48px
+ * buttons. No entrance animation — ui-spec §1.3 permits exactly two animations
+ * in the whole SPA and this is not one of them.
+ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  background: var(--scrim);
+  /* No token carries stacking order; the sheet sits above the app shell. */
+  z-index: 100;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  width: 100%;
+  padding: var(--s-6) var(--s-7) var(--s-9);
+  /* Keep the confirm button clear of the iOS home indicator without shrinking
+   * the 48px target. */
+  padding-bottom: calc(var(--s-9) + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-panel);
+  border-top: 1px solid var(--line-strong);
+  /* Top corners only — the sheet is anchored to the bottom edge. */
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+}
+
+/* 40 x 4 grab handle — neither dimension has a token. */
+.grab {
+  width: 40px;
+  height: 4px;
+  margin: 0 auto;
+  border-radius: var(--r-chip);
+  background: var(--line-strong);
+}
+
+.question {
+  margin: 0;
+  font-family: var(--font-ui);
+  /* 15px: the sheet question sits above the 14px mobile interactive floor
+   * (ui-spec §1.2); no --fs-* token lands on that step. */
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  gap: var(--s-4);
+}
+
+/* Side by side, equal width, each free to shrink rather than overflow. */
+.actions > * {
+  flex: 1 1 0;
+  min-width: 0;
+}

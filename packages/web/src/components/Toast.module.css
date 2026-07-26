@@ -1,0 +1,132 @@
+/*
+ * Toast — the approved design's notification card. Ready reads green and
+ * auto-dismisses; failed reads red and stays until the operator dismisses it.
+ *
+ * No entrance or exit animation: ui-spec §1.3 permits exactly two animations
+ * in the whole app (pulse, spin), so nothing here moves and there is no
+ * JS-driven slide for `prefers-reduced-motion` to have to fight.
+ *
+ * The toast layer owns placement (desktop top-right, mobile bottom); this
+ * component fills the width it is given.
+ */
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-5);
+  width: 100%;
+  padding: var(--s-6) var(--s-7);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--r-panel);
+  background: var(--bg-raised);
+}
+
+.ready {
+  border-color: var(--conn-live-border);
+  border-left-color: var(--st-ready);
+}
+
+/* A failure sits on its own red-shifted ground, not on ordinary chrome wearing
+ * a red border — it is the one notice that persists until acknowledged. */
+.failed {
+  border-color: var(--btn-danger-border);
+  border-left-color: var(--st-failed);
+  background: var(--bg-error);
+}
+
+/* The whole left region is one target, and it only ever opens the task. */
+.body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-5);
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: inherit;
+}
+
+.glyph {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  margin-top: 1px;
+  flex: none;
+}
+
+.lines {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+/* Interface voice, so Archivo — 14px is the design's value and has no token. */
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.handle {
+  font-family: var(--font-mono);
+}
+
+.detail {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta-lg);
+  line-height: 1.45;
+  color: var(--text-dim);
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.failed .detail {
+  color: var(--text-error);
+}
+
+.flag {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-quiet);
+}
+
+.aside {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+}
+
+.countdown {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-quiet);
+  font-variant-numeric: tabular-nums;
+}
+
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0 var(--s-3);
+  border: 0;
+  border-radius: var(--r-input);
+  background: none;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+/* Touch targets are >= 44x44 at mobile (ui-spec §4). */
+@media (max-width: 899px) {
+  .dismiss {
+    min-width: var(--tap);
+    min-height: var(--tap);
+    padding: 0;
+  }
+}
