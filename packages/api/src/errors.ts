@@ -54,7 +54,15 @@ function hasStatusCode(err: unknown): err is Error & { statusCode: number } {
  * Registers the global error handler and 404 handler (api-contract §3, §9).
  * Must be registered before routes so it is active for every request.
  */
-export function registerErrorHandling(app: FastifyInstance): void {
+export interface ErrorHandlingOptions {
+  /** Consulted before the envelope 404 is sent. Returns true when it has
+   * handled the reply — this is how the built SPA is served for paths the API
+   * does not own (docs/api-contract.md §9). Keeping it here rather than adding
+   * a second handler means the route boundary is decided in exactly one place. */
+  onNotFound?: (request: FastifyRequest, reply: FastifyReply) => boolean;
+}
+
+export function registerErrorHandling(app: FastifyInstance, opts: ErrorHandlingOptions = {}): void {
   app.setErrorHandler((err: Error, _request: FastifyRequest, reply: FastifyReply) => {
     if (err instanceof UnauthorizedError) {
       reply.code(401).send(envelope("unauthorized", err.message));
@@ -99,9 +107,10 @@ export function registerErrorHandling(app: FastifyInstance): void {
     reply.code(500).send(envelope("internal_error", "an unexpected error occurred"));
   });
 
-  app.setNotFoundHandler((_request: FastifyRequest, reply: FastifyReply) => {
-    // SPA serving is Phase 5 — every non-API route 404s with the envelope
-    // for now (api-contract §9).
+  app.setNotFoundHandler((request: FastifyRequest, reply: FastifyReply) => {
+    // The dashboard, when a build is present and the path is not one the API
+    // owns. The API's own paths never reach it (api-contract §9).
+    if (opts.onNotFound?.(request, reply) === true) return;
     reply.code(404).send(envelope("not_found", "no such route"));
   });
 }

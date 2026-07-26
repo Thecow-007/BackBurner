@@ -108,6 +108,10 @@ async function main(): Promise<void> {
     pool,
     sseHeartbeatMs: config.sseHeartbeatMs,
     mockWorkerLanes: MOCK_WORKER_LANES,
+    // In production one process serves both the API and the dashboard. When
+    // the SPA has not been built (dev, or an api-only deployment) the path
+    // simply does not exist and nothing is registered — see routes/spa.ts.
+    spaRoot: path.join(REPO_ROOT, "packages", "web", "dist"),
   });
 
   await app.listen({ port: config.port, host: "0.0.0.0" });
