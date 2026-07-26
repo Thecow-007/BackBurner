@@ -59,7 +59,7 @@ The engine's public surface — the only thing `api` may import:
 createEngine({ pool | connectionString, concurrency, lanes, backoff? }) => {
   start(), stop({ drain? }),
   submit(userId, lane, params, { maxAttempts? }),
-  list(userId, filters), get(userId, { handle } | { id }),
+  list(userId, filters), counts(userId, filters), get(userId, { handle } | { id }),
   collect(userId, handle), cancel(userId, handle), retry(userId, handle),
   history(userId, taskId),
   subscribe(userId, sinceId?) => AsyncIterable, latestEventId(userId)
@@ -71,6 +71,7 @@ The option and return types the api relies on are pinned:
 - **`lanes`** — `Record<string, { worker: Worker; defaults?: { maxAttempts?: number } }>`, with `Worker` per the worker contract in §8. The record's keys are the registered lane names; submitting to any other lane raises `UnknownLaneError`.
 - **`backoff`** — `{ baseMs?: number; rng?: () => number }`. Retry delay is `baseMs * 2^(attempts-1) * (0.75 + 0.5 * rng())` — the ±25% jitter of §9 with the RNG injectable, so tests can pin its extremes instead of asserting on randomness ([test-plan §6](./test-plan.md#6-engine-unit-tests)).
 - **`subscribe(userId, sinceId?)`** — yields `{ id: number, event: <serialized event object> }`. The api needs both halves: `id` becomes the SSE `id:` line, `event` becomes the `data:` JSON payload.
+- **`counts(userId, filters)`** — takes the same `filters` object as `list`, returns `{ all, matching, uncollected, status, lane, lanes }` for the `GET /tasks` envelope's `counts` field. Each number has its own filter basis and `lanes` reports the *registered* lane names in registration order, so it is engine configuration rather than a query over `tasks`; the per-field semantics are normative in [api-contract §6.2](./api-contract.md#62-get-tasks--spec) ([ADR 0018](./decisions/0018-task-counts-on-list-response.md)).
 
 Two rules complete the boundary:
 

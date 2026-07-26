@@ -73,8 +73,14 @@ export async function registerTaskRoutes(app: FastifyInstance, opts: TaskRouteOp
     if (query.limit !== undefined) filters.limit = query.limit;
     if (query.cursor !== undefined) filters.cursor = query.cursor;
 
+    // `counts` is additive on the list envelope (api-contract §6.2,
+    // [EXTENSION]) and is computed on every 200, cursor pages included —
+    // never cached, never omitted. The engine owns the SQL; the same parsed
+    // filters drive both calls, so the numbers can never describe a
+    // different filter than the page they ship with.
     const result = await engine.list(userId, filters);
-    reply.code(200).send(result);
+    const counts = await engine.counts(userId, filters);
+    reply.code(200).send({ ...result, counts });
   });
 
   // GET /tasks/id/:id — api-contract §6.7 (registered before /tasks/:handle

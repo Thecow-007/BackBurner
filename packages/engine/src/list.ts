@@ -7,10 +7,10 @@
 import type { Pool } from "pg";
 import { ValidationError } from "./errors.js";
 import { latestEventId } from "./events.js";
+import { parseStatusFilter, parseTimestamp } from "./filters.js";
 import { serializeTask, toIso } from "./serialize.js";
-import type { ListFilters, TaskObject, TaskRow, TaskStatus } from "./types.js";
+import type { ListFilters, TaskObject, TaskRow } from "./types.js";
 
-const STATUSES: readonly TaskStatus[] = ["queued", "running", "ready", "failed", "cancelled"];
 const SORT_FIELDS = ["created_at", "updated_at"] as const;
 type SortField = (typeof SORT_FIELDS)[number];
 
@@ -20,14 +20,6 @@ const MAX_LIMIT = 200;
 interface CursorPayload {
   v: string; // ISO timestamp of the sort field on the last row of the previous page
   id: string; // tiebreak — task uuid (uuidv7, so lexicographic order matches time order)
-}
-
-function parseTimestamp(input: string, field: string): Date {
-  const d = new Date(input);
-  if (Number.isNaN(d.getTime())) {
-    throw new ValidationError(`invalid timestamp for "${field}": "${input}"`);
-  }
-  return d;
 }
 
 function parseSort(sort: string | undefined): { field: SortField; dir: "asc" | "desc" } {
@@ -66,9 +58,7 @@ export async function listTasks(
   userId: string,
   filters: ListFilters
 ): Promise<{ tasks: TaskObject[]; as_of: number; next_cursor: string | null }> {
-  if (filters.status !== undefined && !STATUSES.includes(filters.status as TaskStatus)) {
-    throw new ValidationError(`invalid status "${filters.status}"`);
-  }
+  const status = parseStatusFilter(filters.status);
   const fromDate = filters.from !== undefined ? parseTimestamp(filters.from, "from") : undefined;
   const toDate = filters.to !== undefined ? parseTimestamp(filters.to, "to") : undefined;
   const { field, dir } = parseSort(filters.sort);
@@ -85,8 +75,8 @@ export async function listTasks(
   const conditions: string[] = ["user_id = $1"];
   const values: unknown[] = [userId];
 
-  if (filters.status !== undefined) {
-    values.push(filters.status);
+  if (status !== undefined) {
+    values.push(status);
     conditions.push(`status = $${values.length}`);
   }
   if (filters.lane !== undefined) {

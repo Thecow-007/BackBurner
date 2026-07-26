@@ -77,6 +77,29 @@ export interface ListFilters {
   cursor?: string;
 }
 
+/**
+ * Aggregate counts for one user's tasks — api-contract §6.2's `counts`
+ * object ([EXTENSION]). Each field has its own filter basis; see the table
+ * in `counts.ts` and the contract. Invariants the implementation guarantees:
+ * `status` always carries all five keys (zero-valued when empty),
+ * `sum(status.*) === all` whenever no `lane` filter is active, and `lane`
+ * carries one key per registered lane (zero-valued when empty).
+ */
+export interface TaskCounts {
+  /** Respects `from`/`to` only — the register's grand total. */
+  all: number;
+  /** Respects every active filter — the "N tasks" the current view lists. */
+  matching: number;
+  /** `status IN ('ready','failed') AND collected = false`; respects `lane`/`from`/`to`. */
+  uncollected: number;
+  /** Per status; respects `lane`/`from`/`to`, ignores `status`. */
+  status: Record<TaskStatus, number>;
+  /** Per lane; respects `status`/`from`/`to`, ignores `lane`. */
+  lane: Record<string, number>;
+  /** Lanes REGISTERED with `createEngine`, in registration order. Not data. */
+  lanes: string[];
+}
+
 export interface HistoryTransition {
   event_type: string;
   from_status: TaskStatus | null;
@@ -98,6 +121,7 @@ export interface Engine {
     userId: string,
     filters: ListFilters
   ): Promise<{ tasks: TaskObject[]; as_of: number; next_cursor: string | null }>;
+  counts(userId: string, filters: ListFilters): Promise<TaskCounts>;
   get(userId: string, ref: { handle: string } | { id: string }): Promise<TaskObject>;
   collect(userId: string, handle: string): Promise<TaskObject>;
   cancel(userId: string, handle: string): Promise<TaskObject>;

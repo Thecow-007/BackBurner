@@ -42,11 +42,23 @@ export interface ErrorEnvelope {
   };
 }
 
+/** The `counts` object on the list envelope (api-contract §6.2,
+ * [EXTENSION]). Every field has its own filter basis — see the contract. */
+export interface TaskCounts {
+  all: number;
+  matching: number;
+  uncollected: number;
+  status: Record<TaskStatus, number>;
+  lane: Record<string, number>;
+  lanes: string[];
+}
+
 /** `GET /tasks` response envelope (api-contract §6.2). */
 export interface TaskListResponse {
   tasks: TaskObject[];
   as_of: number;
   next_cursor: string | null;
+  counts: TaskCounts;
 }
 
 export interface HistoryTransition {

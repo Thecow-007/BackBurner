@@ -6,6 +6,7 @@
 import type { Pool } from "pg";
 import { isActiveHandleConflict, lockAllocator, nextHandleNum } from "./allocator.js";
 import { resolveBackoffConfig, computeBackoffMs, type BackoffConfig } from "./backoff.js";
+import { countTasks } from "./counts.js";
 import { createPool, withTransaction } from "./db.js";
 import { createDispatcher, type ClaimOutcome, type Dispatcher } from "./dispatch.js";
 import { InvalidStateError, NotFoundError, UnknownLaneError, ValidationError } from "./errors.js";
@@ -36,6 +37,7 @@ import type {
   HistoryTransition,
   Job,
   ListFilters,
+  TaskCounts,
   TaskObject,
   TaskRow,
   TaskStatus,
@@ -62,6 +64,9 @@ export function createEngine(opts: EngineOptions): Engine {
   const pool: Pool = createPool({ pool: opts.pool, connectionString: opts.connectionString });
   const ownsPool = !opts.pool;
   const lanes = opts.lanes;
+  // Registration order — the order the caller declared the lanes in. This,
+  // not `SELECT DISTINCT lane FROM tasks`, is what `counts().lanes` reports.
+  const laneNames: readonly string[] = Object.keys(opts.lanes);
   const concurrency = opts.concurrency;
   const backoffConfig: BackoffConfig = resolveBackoffConfig(opts.backoff);
   const bus = new EventBus();
@@ -330,6 +335,10 @@ export function createEngine(opts: EngineOptions): Engine {
     return listTasks(pool, userId, filters);
   }
 
+  async function counts(userId: string, filters: ListFilters): Promise<TaskCounts> {
+    return countTasks(pool, userId, laneNames, filters);
+  }
+
   async function get(userId: string, ref: { handle: string } | { id: string }): Promise<TaskObject> {
     const row =
       "handle" in ref ? await resolveHandle(pool, userId, ref.handle) : await getTaskById(pool, userId, ref.id);
@@ -513,6 +522,7 @@ export function createEngine(opts: EngineOptions): Engine {
     stop,
     submit,
     list,
+    counts,
     get,
     collect,
     cancel,

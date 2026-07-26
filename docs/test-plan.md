@@ -41,7 +41,7 @@ sleeps inside the mock worker. Determinism comes from event-driven waiting and e
 | Suite | Package | Files | Runs against |
 |---|---|---|---|
 | Criteria (spec §Success criteria, 1:1) | `packages/e2e` | `test/criteria/criterion-01…09.test.ts` | spawned API child process + test DB |
-| Supplemental e2e | `packages/e2e` | `test/suites/*.test.ts` (9 files) | spawned API child process + test DB |
+| Supplemental e2e | `packages/e2e` | `test/suites/*.test.ts` (11 files) | spawned API child process + test DB |
 | Engine unit | `packages/engine` | `test/*.test.ts` | in-process; pure + DB-backed |
 
 Vitest is the only runner. The e2e package runs with `fileParallelism: false` (one server + one
@@ -690,6 +690,37 @@ proves "a job marked non-retryable":
    `retryable` flag gates **auto**-retry only.
 5. Precedence: `{ "fail": true, "fail_permanent": true }` → `fail_permanent` wins — straight to
    `failed`, `retryable: false`, no `retrying` events.
+
+### 5.11 `counts-coherence`
+
+The `counts` object on `GET /tasks` (api-contract §6.2, [ADR 0018](./decisions/0018-task-counts-on-list-response.md)). The
+rule under test is an honesty rule — **a count must always match the list it opens** — complicated
+by the fact that the six fields do not share one filter basis (`all` ignores `status`/`lane`;
+`status.*` ignores `status`; `lane.*` ignores `lane`; `matching` respects everything; `lanes`
+ignores all of it). Spawned with `WORKER_CONCURRENCY: "1"` and the same blocker-held corpus
+discipline as §5.6: 12 tasks — 4 `queued`, 1 `running`, 3 `ready` (one collected), 2 `failed`,
+2 `cancelled`; 7 scrape, 5 report — rebuilt per test, so every total is hand-countable.
+
+1. **No filter**: `all === matching ===` the row count; `status.*` equals the hand-counted
+   breakdown and `sum(status.*) === all` (the sidebar's "All" row renders that sum);
+   `sum(lane.*) === all`; `uncollected` equals both the hand-counted 4 and the rows the page
+   itself shows as `ready`/`failed` and uncollected.
+2. **`?status=` alone**, all five values: the list returns *exactly* `counts.status[thatStatus]`
+   rows; `status.*`, `all`, and `uncollected` are unchanged by the status filter; `lane.*` narrows
+   to that status and sums to `matching`.
+3. **`?lane=` alone**, both lanes: `matching` equals the row count; `all` and `lane.*` are
+   unchanged; `status.*` and `uncollected` narrow to the lane and `sum(status.*) === matching`.
+4. **`?status=&lane=` together**, all ten combinations including an empty one: rows ===
+   `matching` === `status[thatStatus]` === `lane[thatLane]`, and `all` still moves for neither.
+5. **A `from`/`to` window**: a bracket around the corpus changes nothing; an empty window zeroes
+   every number while still carrying all five status keys, both registered lanes, and `lanes`;
+   two complementary half-open windows split on a real `created_at` partition the register exactly
+   (`before.all + after.all === all`), and inside each window every basis still holds.
+6. **Cursor pages**: `counts` is present on every page of a `limit=5` chain and is identical page
+   to page — `matching` is the whole matching set, never a page-local tally.
+7. **A user with zero tasks** still receives `lanes: ["scrape","report"]` (registration, not
+   `SELECT DISTINCT lane`) and an all-zero, fully-keyed `counts` object, while the other user's
+   register is unaffected — counts are per-user like every other read.
 
 ---
 

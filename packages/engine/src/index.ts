@@ -14,6 +14,7 @@ export type {
   Job,
   LaneConfig,
   ListFilters,
+  TaskCounts,
   TaskObject,
   TaskStatus,
   Worker,

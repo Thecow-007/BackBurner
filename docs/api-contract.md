@@ -350,11 +350,58 @@ Authorization: Bearer bb_9f2ce4a1b7d8036c5e12f409ab87cd3210fe6b54
     }
   ],
   "as_of": 4131,
-  "next_cursor": null
+  "next_cursor": null,
+  "counts": {
+    "all": 312,
+    "matching": 2,
+    "uncollected": 12,
+    "status": { "queued": 1, "running": 2, "ready": 96, "failed": 47, "cancelled": 38 },
+    "lane": { "scrape": 2, "report": 2 },
+    "lanes": ["scrape", "report"]
+  }
 }
 ```
 
-The envelope fields `as_of` and `next_cursor` are **[EXTENSION]** — the task objects inside are spec-shaped. `as_of` is the event cursor for gap-free SSE hydration ([§7](#7-listing-filters-sort-pagination-as_of)).
+The envelope fields `as_of`, `next_cursor`, and `counts` are **[EXTENSION]** — the task objects inside are spec-shaped. `as_of` is the event cursor for gap-free SSE hydration ([§7](#7-listing-filters-sort-pagination-as_of)).
+
+#### The `counts` object — [EXTENSION]
+
+Aggregate totals for the authenticated user, present on **every** `200` — cursor pages included. Always computed, never cached, never omitted, and never page-local: `counts` describes the whole matching set, not the rows on this page. There is no separate counts route; the numbers ride with the list so they can never disagree with it ([ADR 0018](./decisions/0018-task-counts-on-list-response.md)).
+
+With no filters applied, `counts` describes the whole register:
+
+```json
+"counts": {
+  "all": 312,
+  "matching": 312,
+  "uncollected": 19,
+  "status": { "queued": 2, "running": 4, "ready": 168, "failed": 77, "cancelled": 61 },
+  "lane": { "scrape": 184, "report": 128 },
+  "lanes": ["scrape", "report"]
+}
+```
+
+The response example above shows that same register through `?status=running&lane=scrape`: `all` is unchanged at 312, `status.*` has narrowed to the scrape lane (and still sums to that lane's 184), `lane.*` has narrowed to running tasks (and still sums to the register's 4 running), and `matching` — 2 — is the one number both filters bite on. Each field has its **own filter basis**, because each answers a different question:
+
+| Field | Type | Respects | Ignores | Answers |
+|---|---|---|---|---|
+| `all` | integer | `from`, `to` | `status`, `lane` | "how many tasks are in the register at all" |
+| `matching` | integer | every active filter | nothing | "how many tasks does the current view list" — the total behind `10 of N` |
+| `uncollected` | integer | `lane`, `from`, `to` | `status` | "how many finished results are waiting to be collected" |
+| `status.*` | object, integer values | `lane`, `from`, `to` | `status` | the per-status breakdown, so selecting a status shows exactly the number advertised |
+| `lane.*` | object, integer values | `status`, `from`, `to` | `lane` | the per-lane breakdown, unchanged while one lane is selected |
+| `lanes` | array of strings | nothing | all filters | the lanes **registered** with the engine, in registration order |
+
+Guarantees a client may rely on:
+
+- `status` always carries **all five** status keys, zero-valued when empty — never a partial object.
+- `sum(status.*) === all` exactly, whenever no `lane` filter is active.
+- `lane` carries one key per registered lane, zero-valued when that lane has no matching tasks (plus a key for any lane present in the data but no longer registered — those rows exist and are not hidden).
+- `lanes` is engine lane *registration*, not `SELECT DISTINCT lane`: a brand-new user with zero tasks still receives the full list, which is what a submit form's lane picker is built from.
+- Everything is scoped to the authenticated user, exactly like the list itself.
+- `sort`, `limit`, and `cursor` do not affect any count.
+
+`counts` and the page are read back-to-back rather than inside one snapshot, so — exactly like `as_of` ([§7](#7-listing-filters-sort-pagination-as_of)) — a task committing between the two reads may be counted without appearing on the page. The filter bases above are exact; the instant is adjacent, not atomic.
 
 **Status codes**
 
@@ -679,6 +726,8 @@ All parameters apply to `GET /tasks` and combine freely. Invalid values are reje
 | `sort`    | **[EXTENSION]** | `created_at` or `updated_at`, optionally `:asc`/`:desc` | Default `created_at:desc` (newest first). Direction defaults to `desc`. Ties broken by `id` in the same direction, so ordering is total and stable. |
 | `limit`   | **[EXTENSION]** | integer 1–200 | Page size. Default 50. |
 | `cursor`  | **[EXTENSION]** | opaque string | Resume token from a previous response's `next_cursor`. |
+
+These same parameters also shape the response's `counts` object — but **not uniformly**: `all` ignores `status` and `lane`, `status.*` ignores `status`, `lane.*` ignores `lane`, and `lanes` ignores everything. The per-field filter basis is normative and lives in [§6.2](#62-get-tasks--spec).
 
 ### Pagination
 
