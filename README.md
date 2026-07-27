@@ -4,6 +4,8 @@ BackBurner is a background job runner. Submit a job and get a short, recyclable 
 
 Stack: Node 22 + TypeScript, PostgreSQL 18 (`uuidv7()` is native), npm workspaces monorepo.
 
+The dashboard is served at the root path; the REST and SSE surface is at the same origin. Bearer-key auth is the only gate — no VPN, no allowlist — so `curl` works from any network with a key (see [API surface](#api-surface)).
+
 ## Architecture
 
 Four workspaces around one database:
@@ -174,7 +176,39 @@ Requires the same Docker Postgres 18 as local setup; the e2e and engine test sui
 
 ## GitHub Codespaces
 
-The devcontainer (`.devcontainer/devcontainer.json`) reuses the same `docker-compose.yml`, provisions Node 22 and a Postgres 18 service, and runs `npm ci` on create. Every command above works unchanged inside a Codespace — there is no separate Codespaces-only setup path.
+Open the repository in a Codespace — **Code → Codespaces → Create codespace on main**. Nothing else is required: `.devcontainer/devcontainer.json` reuses the repository's own `docker-compose.yml`, so the Postgres 18 the Codespace talks to is the same service definition local dev and production use. The devcontainer adds Node 22 and an SSH server as features, starts `postgres` alongside the workspace container, and runs `npm ci` on create.
+
+`DATABASE_URL` is already exported in the container (pointing at the `backburner_dev` database the compose override creates on first init), so once the Codespace finishes building:
+
+```
+npm run build
+npm run migrate
+npm run seed -- --tasks 300     # prints the three API keys, once
+npm test                        # the full matrix: unit + criteria + supplemental
+npm run dev                     # api + Vite; open the forwarded port 3000
+```
+
+Every command in this README works unchanged inside a Codespace — there is no Codespaces-only setup path, and no step that exists only in prose. Ports 3000 and 5432 are forwarded automatically.
+
+## Deployment
+
+One Linux host, one Docker Compose stack — the `prod` profile of the same `docker-compose.yml` (app + `postgres:18`), with Postgres on a named volume so durability survives container recreation, not just process restarts. Full topology in [`docs/deployment.md`](./docs/deployment.md).
+
+**The pipeline.** Push to `main` → CI runs typecheck, build, the engine unit suite, the 9 criteria tests, and the supplemental suites → on green, the `deploy` job builds the image and pushes it to GHCR under an immutable `:<sha>` tag plus a moving `:main`. A red test job makes the deploy structurally unreachable, since it declares `needs: [test, criteria]`.
+
+Delivery is the second half of that job, and it activates on the presence of the `DEPLOY_HOST` secret: with it set, the job SSHes to the server with a pinned host key, refreshes the compose file from `main`, runs `docker compose pull && docker compose --profile prod up -d` pinned to the SHA it just built, and then waits on the container healthcheck — failing the deploy if the app never comes up. Without it, the image still publishes and the run stays green, which is the correct behaviour during initial bring-up and after a server move.
+
+**Migrations ship with code.** The image's entrypoint (`scripts/start.mjs`) runs the idempotent migration runner and only starts the api if it succeeds — a container that cannot migrate does not serve traffic. The api additionally verifies at boot that every file in `migrations/` is recorded in `schema_migrations` and refuses to start otherwise.
+
+**The edge** is a Cloudflare Tunnel; the stack publishes no public port at all, and both containers bind only `127.0.0.1` on the host for operator diagnosis. Cloudflare drops streams idle for roughly 100 seconds, which would silently kill a live dashboard — the api's `: hb` heartbeat every 20 s (`SSE_HEARTBEAT_MS`) is what prevents it, and a drop that happens anyway is recovered by `EventSource` reconnecting with `Last-Event-ID` and replaying from the transition journal. See [ADR 0029](./docs/decisions/0029-cloudflare-tunnel-as-the-production-edge.md) for why a tunnel rather than a proxied A record.
+
+**Seeding production.** Raw API keys print exactly once and are unrecoverable, so they are minted on the deployed instance rather than shipped:
+
+```
+docker compose exec app node scripts/seed.mjs --tasks 300
+```
+
+Nothing secret lives in this repository. Runtime configuration comes from a server-side `.env` consumed by compose; the deploy job's only secrets are the SSH host, user, key, and pinned host key.
 
 ## Project status
 
@@ -184,7 +218,9 @@ The devcontainer (`.devcontainer/devcontainer.json`) reuses the same `docker-com
 
 The register is a live, resizable three-pane operations view: server-ranked prefix search over handles and ids, a one-press "needs collection" filter whose count always matches the list it opens, per-status and per-lane totals sourced entirely from the server, an attempt-grouped transition timeline, and a submit form that defaults to a random outcome so the register behaves like a system under real load. Every number on screen comes from the API — nothing is inferred from the loaded page ([`docs/frontend-brief.md`](./docs/frontend-brief.md) §6.5).
 
-**Not yet built:** there is no deployed URL. Production topology is designed in [`docs/deployment.md`](./docs/deployment.md), and the container image and deploy pipeline are the remaining milestone.
+**Ships on every green push:** the container image builds and publishes to GHCR automatically, gated on the full test matrix (see [Deployment](#deployment)). The production host is being brought up; this section names the live URL once it is serving.
+
+**Known limits, stated plainly.** The engine is single-process by design: claiming is already multi-process-safe (`FOR UPDATE SKIP LOCKED`, CAS transitions, epoch-guarded completions), but boot recovery assumes it owns every `running` row, so a second process would need a lease or claim-owner column before it could be added safely. Dispatch wake-ups are in-process rather than `LISTEN/NOTIFY`. The transition journal is append-only with no retention policy. Each of these is a deliberate seam rather than an oversight — [`docs/architecture.md`](./docs/architecture.md) §14 covers what changes first with more time.
 
 **Normative docs** (the design authority for everything above):
 
