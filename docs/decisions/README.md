@@ -38,3 +38,4 @@ Where a record extends or resolves an ambiguity in the assessment spec ([`docs/a
 | [0026](0026-detail-pane-only-with-a-selection.md) | The register spans the full width when nothing is selected | Accepted |
 | [0027](0027-search-overlay-reads-the-server.md) | The search overlay reads the server, and keeps the results out of the store | Accepted |
 | [0028](0028-random-submit-outcomes-rolled-client-side.md) | Random submit outcomes, rolled in the browser | Accepted |
+| [0029](0029-cloudflare-tunnel-as-the-production-edge.md) | A Cloudflare Tunnel is the production edge, not a proxied A record | Accepted |

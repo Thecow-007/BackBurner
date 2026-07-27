@@ -845,10 +845,16 @@ mocked verdict on them would be weaker than the black-box one.
 
 ## 7. Continuous integration
 
-`.github/workflows/ci.yml` runs two jobs on every push and pull request, matching the build
+`.github/workflows/ci.yml` runs two test jobs on every push and pull request, matching the build
 plan's gate mechanics: `test` is a required check from Phase 0 onward; `criteria` is a visible
 check that stays non-required until TDD Gate B promotes it — the criteria CI job flips from
 non-blocking to required at that gate and stays required forever.
+
+Since Phase 6 the same workflow carries a third job, `deploy`, which is not a test job and is
+transcribed in [deployment.md](./deployment.md) §3 rather than here. It runs only on a push to
+`main` and declares `needs: [test, criteria]`, so a red run of either suite below is structurally
+un-deployable. It lives in this workflow rather than its own precisely so that gate is an
+ordinary job dependency instead of a cross-workflow inference.
 
 ```yaml
 name: ci

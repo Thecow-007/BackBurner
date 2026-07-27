@@ -1,0 +1,52 @@
+# Build-context exclusions for the production image (Dockerfile,
+# docs/deployment.md §2). Two jobs: keep the context small, and make it
+# impossible for host-side build artifacts or secrets to enter an image.
+
+# Dependencies and build output are produced inside the image, never copied
+# from the host — a stale local dist/ leaking in would ship code that does not
+# match the committed sources.
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+coverage/
+
+# Both forms are required. Unlike .gitignore, a leading-wildcard
+# .dockerignore pattern matches only at the context root — "*.tsbuildinfo"
+# alone lets packages/*/tsconfig.tsbuildinfo through, and TypeScript then
+# trusts that stale incremental manifest, reports every project up to date,
+# and emits NOTHING. The build "succeeds" with an empty dist and the failure
+# only surfaces later, as an unresolvable @backburner/engine import.
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Secrets. .env is gitignored, but the Docker context is not git — this is the
+# line that actually keeps it out of the image (docs/deployment.md §6). The
+# **/ forms cover a per-package .env (Vite reads one) for the same reason the
+# tsbuildinfo entry above needs them.
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+
+# Not needed to build or run: history, CI config, the other environments'
+# definitions, and the design corpus (which carries the assessment PDF).
+.git/
+.github/
+.devcontainer/
+docs/
+*.md
+!README.md
+
+# Tests never run in the image; the e2e package is present only so npm ci can
+# satisfy the lockfile's workspace set.
+**/test/
+packages/e2e/.logs/
+
+# Editor and OS noise.
+.obsidian/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

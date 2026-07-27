@@ -5,9 +5,11 @@
 #   dev  profile — postgres:18 only, for local development and the test suites.
 #   prod profile — app + postgres:18, restart: unless-stopped, for the server.
 #
-# Nothing secret lives here. Production runtime configuration (per
-# docs/architecture.md §13) is supplied by a server-side .env file — see
-# .env.example — never committed.
+# Nothing secret lives here. Every value below is either a safe default or an
+# interpolation of a variable supplied by a server-side .env file, which
+# compose loads automatically from the project directory — see .env.example
+# for the full set. No connection strings, keys, or credentials in the repo
+# (docs/deployment.md §6).
 
 services:
   # No "profiles" key: compose treats a service with no profiles attribute as
@@ -22,9 +24,18 @@ services:
     image: postgres:18
     restart: unless-stopped
     environment:
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      # Creates the application database on first volume init. Only takes
+      # effect on a FRESH data volume — pointing an existing volume at a new
+      # name requires creating that database by hand.
+      POSTGRES_DB: ${POSTGRES_DB:-backburner}
     ports:
-      - "5432:5432"
+      # Loopback only. "Postgres is never exposed publicly — only the app
+      # answers external traffic" (docs/deployment.md §1); a bare "5432:5432"
+      # binds 0.0.0.0 and puts the database on the public internet the moment
+      # this file runs on a server. Local dev and the test suites connect to
+      # localhost, so they are unaffected.
+      - "127.0.0.1:5432:5432"
     volumes:
       # postgres:18+ images store data under major-version-specific
       # subdirectories (pg_ctlcluster-style) and expect the volume mounted at
@@ -38,23 +49,80 @@ services:
       timeout: 5s
       retries: 10
 
-  # TODO(Phase 6): no Dockerfile exists yet (docs/deployment.md §2 — multi-stage
-  # build on Node 22, added in Phase 6). `build: .` is wired ahead of time so
-  # the prod profile's shape is final now; it is never invoked by
-  # `docker compose --profile dev up -d`, which does not touch this service.
   app:
     profiles: ["prod"]
+    # The moving tag the deploy workflow republishes on every green push to
+    # main (docs/deployment.md §3). `build` is kept alongside so the same file
+    # can produce the image locally — `docker compose --profile prod build` —
+    # which is how the image gets proven before it reaches the server.
+    image: ${APP_IMAGE:-ghcr.io/thecow-007/backburner:main}
     build:
       context: .
     restart: unless-stopped
+    # Reap zombies. The entrypoint spawns the migration runner as a child
+    # before becoming the api, and PID 1 in a container has no default reaper.
+    init: true
+    # Must exceed DRAIN_TIMEOUT_MS. On `docker stop`, SIGTERM reaches the api
+    # (see the Dockerfile's exec-form CMD) and it drains in-flight workers
+    # before exiting; Docker's default 10s grace period would SIGKILL it
+    # mid-drain on every deploy and leave the work for boot recovery.
+    stop_grace_period: 45s
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/backburner
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-backburner}
       PORT: "3000"
+      # Every knob from docs/architecture.md §13, listed explicitly rather
+      # than left to the application defaults. SSE_HEARTBEAT_MS in particular
+      # is load-bearing in production: it is what keeps Cloudflare from
+      # culling an idle event stream (docs/deployment.md §4), and a silently
+      # defaulted value is exactly the failure that only shows up on camera.
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      BACKOFF_BASE_MS: ${BACKOFF_BASE_MS:-2000}
+      SSE_HEARTBEAT_MS: ${SSE_HEARTBEAT_MS:-20000}
+      DRAIN_TIMEOUT_MS: ${DRAIN_TIMEOUT_MS:-30000}
+      NODE_ENV: production
     ports:
-      - "3000:3000"
+      # Loopback only — public traffic arrives through the Cloudflare tunnel
+      # over the `edge` network below, not through a published port. This
+      # mapping exists so the server operator can curl the app directly when
+      # diagnosing whether a problem is the app or the tunnel.
+      - "127.0.0.1:3000:3000"
+    networks:
+      default: {}
+      edge:
+        # A distinct alias, not the service name: `edge` is a shared network
+        # carrying other stacks, and a generic "app" alias would collide with
+        # the next compose project that has an app service. The tunnel's
+        # public-hostname route points at http://backburner:3000.
+        aliases: ["backburner"]
+    healthcheck:
+      # Node 22 has global fetch, so this needs nothing installed in the
+      # image. /health is the one unauthenticated endpoint (api-contract §9).
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      # Migrations run before the api listens; don't count that as unhealthy.
+      start_period: 30s
+
+networks:
+  # The pre-existing network the server's cloudflared container sits on. It is
+  # external because this stack does not own it — the tunnel and its other
+  # services were there first. Declared here but only ever attached by `app`,
+  # which lives in the prod profile: compose resolves an external network only
+  # when a service that uses it actually starts, so local dev, the test
+  # suites, and the devcontainer never need it to exist.
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-cloudflared}
 
 volumes:
   pgdata:
