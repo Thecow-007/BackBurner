@@ -51,6 +51,17 @@ export interface ListOptions {
   cursor?: string;
 }
 
+export interface SearchOptions {
+  limit?: number;
+  /** Aborts the request when the search term moves on (JumpTo debounce). */
+  signal?: AbortSignal;
+}
+
+/** The default page for the search overlay — the API caps `limit` at 200 and
+ * reports the true total separately in `counts.matching`, so a short page plus
+ * "showing 20 of 184 matches" is honest without loading everything. */
+const SEARCH_LIMIT = 20;
+
 function buildQuery(params: Record<string, string | number | undefined>): string {
   const usp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -83,11 +94,15 @@ export class ApiClient {
         },
       });
     } catch (err) {
+      // An abort is the caller changing its mind, not a failure to report. It
+      // gets its own code so the search overlay can drop it silently instead of
+      // flashing "Could not reach the server" on every keystroke.
+      const aborted = err instanceof DOMException && err.name === "AbortError";
       throw new ApiError({
         status: 0,
-        code: "network_error",
+        code: aborted ? "aborted" : "network_error",
         message: err instanceof Error ? err.message : "Could not reach the server.",
-        isNetworkError: true,
+        isNetworkError: !aborted,
       });
     }
 
@@ -124,10 +139,32 @@ export class ApiClient {
       from: filters.from,
       to: filters.to,
       sort: filters.sort,
+      // The literal string `true` or nothing at all. Any other value is a 400,
+      // and "filter off" is expressed by omission (api-contract §7).
+      uncollected: filters.uncollected === true ? "true" : undefined,
       limit: opts.limit,
       cursor: opts.cursor,
     });
     return this.request<TaskListResponse>(`/tasks${query}`);
+  }
+
+  /**
+   * `GET /tasks?q=` — the search overlay's read (api-contract §7, ADR 0027).
+   *
+   * The server matches handle and id by equality or prefix, case-insensitively,
+   * and returns the rows ALREADY RANK-ORDERED: exact match first, then tasks
+   * still holding their handle, then `created_at` descending. The caller renders
+   * that order verbatim — re-sorting client-side would discard the ranking the
+   * request was made for.
+   *
+   * `q` is unpaginated (`next_cursor` is always `null`) and cannot be combined
+   * with `sort` or `cursor` (both are `400`), so neither is sent. The response's
+   * `counts.matching` is the whole match set, which is what lets the overlay say
+   * "showing 20 of 184 matches" without inferring a total.
+   */
+  searchTasks(q: string, opts: SearchOptions = {}): Promise<TaskListResponse> {
+    const query = buildQuery({ q, limit: opts.limit ?? SEARCH_LIMIT });
+    return this.request<TaskListResponse>(`/tasks${query}`, { signal: opts.signal });
   }
 
   /** `GET /tasks/id/{id}` — detail mount, and the event-driven backfill for a
@@ -148,6 +185,7 @@ export class ApiClient {
     if (input.duration_ms !== undefined) params.duration_ms = input.duration_ms;
     if (input.fail !== undefined) params.fail = input.fail;
     if (input.fail_permanent !== undefined) params.fail_permanent = input.fail_permanent;
+    if (input.fail_times !== undefined) params.fail_times = input.fail_times;
 
     const body: Record<string, unknown> = { lane: input.lane, params };
     if (input.max_attempts !== undefined) body.max_attempts = input.max_attempts;

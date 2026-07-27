@@ -353,11 +353,39 @@
   color: var(--text-quiet);
 }
 
+/*
+ * ADVANCED now holds two things: the attempt budget and the outcome control.
+ * The body stacks them; each numeric row keeps the original three-column grid,
+ * so `label · field · help` still reads as one line on a desktop.
+ */
 .advancedBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-9);
+}
+
+.advancedRow,
+.flakyRow {
   display: grid;
   grid-template-columns: 120px 88px minmax(0, 1fr);
   align-items: center;
   gap: var(--s-5);
+}
+
+/* The collapsed toggle states the current outcome, so a non-default choice is
+ * never hidden behind a closed section. */
+.advancedSummary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--text-quiet);
+}
+
+/* Flaky with an attempt budget of 1 can never recover, so the option is
+ * retired. Dimmed AND non-interactive — the note beside it says why. */
+.outcomeDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .advancedLabel {
@@ -500,9 +528,14 @@
     font-size: 14px;
   }
 
-  /* The three-column advanced row does not fit a phone; stack it. */
-  .advancedBody {
+  /* The three-column advanced rows do not fit a phone; stack them. */
+  .advancedRow,
+  .flakyRow {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .advancedToggle {
+    flex-wrap: wrap;
   }
 
   .attemptsInput {

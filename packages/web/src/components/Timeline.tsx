@@ -13,7 +13,7 @@
  */
 import { useMemo, type ReactElement } from "react";
 
-import { durationBetween, formatClock, formatDuration } from "../lib/format.js";
+import { durationBetween, formatDuration, formatTimelineTime } from "../lib/format.js";
 import { statusPresentation } from "../lib/status.js";
 import type { HistoryTransition, TaskStatus } from "../lib/types.js";
 import styles from "./Timeline.module.css";
@@ -24,6 +24,9 @@ export interface TimelineProps {
   /** The micro-label above the rail, e.g. "TIMELINE · 3 ATTEMPTS" or
    *  "TIMELINE · LIVE". The caller composes it. */
   label?: string;
+  /** The clock node timestamps are compared against, so "is this from today?"
+   * is a question the caller answers and a test can pin. Defaults to now. */
+  now?: number;
 }
 
 /** The register's stand-in for "there was no prior status" — the `accepted`
@@ -46,23 +49,37 @@ interface AttemptGroup {
   nodes: TimelineNodeItem[];
 }
 
-export function Timeline({ transitions, label }: TimelineProps): ReactElement | null {
+export function Timeline({ transitions, label, now }: TimelineProps): ReactElement | null {
   const groups = useMemo(() => buildGroups(transitions), [transitions]);
   if (groups.length === 0) return null;
+  const clock = now ?? Date.now();
 
   return (
     <div className={styles.root}>
       {label !== undefined && label !== "" ? <div className={styles.label}>{label}</div> : null}
       <ol className={styles.groups}>
         {groups.map((group, index) => (
-          <AttemptSection key={group.nodes[0]?.key ?? `group-${index}`} group={group} />
+          <AttemptSection
+            key={group.nodes[0]?.key ?? `group-${index}`}
+            group={group}
+            now={clock}
+            last={index === groups.length - 1}
+          />
         ))}
       </ol>
     </div>
   );
 }
 
-function AttemptSection({ group }: { group: AttemptGroup }): ReactElement {
+function AttemptSection({
+  group,
+  now,
+  last,
+}: {
+  group: AttemptGroup;
+  now: number;
+  last: boolean;
+}): ReactElement {
   const heading = attemptLabel(group);
   const duration = groupDuration(group.nodes);
 
@@ -76,15 +93,40 @@ function AttemptSection({ group }: { group: AttemptGroup }): ReactElement {
         </div>
       ) : null}
       <ol className={styles.nodes}>
-        {group.nodes.map((node) => (
-          <TimelineNode key={node.key} node={node} group={group} />
+        {group.nodes.map((node, index) => (
+          <TimelineNode
+            key={node.key}
+            node={node}
+            group={group}
+            now={now}
+            /*
+             * The rail is a line BETWEEN events, so it must stop at the last dot
+             * rather than trail off into empty space. "Last" is narrow on
+             * purpose: only the final node of the final group, and only when it
+             * has no backoff marker hanging below it — a node that is last
+             * within an earlier attempt still has the next attempt to connect
+             * to, and a node followed by `backoff … — waiting` still has its own
+             * dashed segment to reach.
+             */
+            terminal={last && index === group.nodes.length - 1 && node.waitMs === null}
+          />
         ))}
       </ol>
     </li>
   );
 }
 
-function TimelineNode({ node, group }: { node: TimelineNodeItem; group: AttemptGroup }): ReactElement {
+function TimelineNode({
+  node,
+  group,
+  now,
+  terminal,
+}: {
+  node: TimelineNodeItem;
+  group: AttemptGroup;
+  now: number;
+  terminal: boolean;
+}): ReactElement {
   const transition = node.transition;
   // S is the status the transition moved TO. `collected` is the exception: it
   // is a flag flip, not a status change (the journal records ready → ready), so
@@ -98,20 +140,25 @@ function TimelineNode({ node, group }: { node: TimelineNodeItem; group: AttemptG
   const line = metaLine(transition, node.attempt ?? group.attempt, node.max ?? group.max);
 
   return (
-    <li className={styles.node}>
+    <li className={styles.node} data-terminal={terminal ? "true" : undefined}>
       <div className={styles.row}>
         <div className={styles.rail} aria-hidden="true">
           <span
             className={styles.dot}
             style={{ background: dotColor, boxShadow: `0 0 0 3px ${dotHalo}` }}
           />
-          <span className={styles.stem} />
+          {/* No stem below the last dot: a hairline continuing into empty space
+              would draw a connection to an event that has not happened. */}
+          {terminal ? null : <span className={styles.stem} />}
         </div>
-        <div className={styles.body}>
+        <div className={`${styles.body}${terminal ? ` ${styles.bodyEnd}` : ""}`}>
           <div className={styles.head}>
             <span className={styles.type}>{transition.event_type}</span>
+            {/* `dateTime` carries the exact instant the engine journaled; the
+                visible text is the local reading of it, dated whenever it is
+                not from today. */}
             <time className={styles.time} dateTime={transition.at}>
-              {formatClock(new Date(transition.at))}
+              {formatTimelineTime(transition.at, now)}
             </time>
           </div>
           <div className={styles.meta}>{line}</div>

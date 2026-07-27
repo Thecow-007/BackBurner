@@ -51,7 +51,6 @@ import {
   describeFilters,
   FilterBar,
   FilterSheet,
-  StatusChipRail,
 } from "./FilterSheet.js";
 import { JumpTo } from "./JumpTo.js";
 import { TaskCard } from "./TaskCard.js";
@@ -142,6 +141,24 @@ function confirmCopy(task: Task, action: RowAction): ConfirmCopy {
             confirmVariant: "collect",
           };
   }
+}
+
+// ── Toolbar quick filters ───────────────────────────────────────────────────
+//
+// Both drop the key rather than setting a falsy value: `TaskFilters` models
+// "off" as absence, which is exactly how the wire models it (api-contract §7
+// rejects `?uncollected=false` with a 400).
+
+function withoutUncollected(filters: TaskFilters): TaskFilters {
+  const next: TaskFilters = { ...filters };
+  delete next.uncollected;
+  return next;
+}
+
+function withoutStatus(filters: TaskFilters): TaskFilters {
+  const next: TaskFilters = { ...filters };
+  delete next.status;
+  return next;
 }
 
 // ── Group counts (ui-spec §3.10) ────────────────────────────────────────────
@@ -444,16 +461,50 @@ export function Register({ selectedId }: RegisterProps): ReactElement {
           </button>
         ) : null}
 
-        {/* Sourced straight from the server's counts; rendered only once they
-         * exist, because a placeholder number would be a claim. */}
+        {/*
+          Sourced straight from the server's counts; rendered only once they
+          exist, because a placeholder number would be a claim.
+
+          Both numbers are now buttons that open the list they describe — the
+          rule in ui-spec §3.10. `to collect` applies `?uncollected=true`,
+          `running` applies `status=running`, and either toggles off on a second
+          press. They read as pressable but stay quiet: one clickable number
+          beside one inert one looks like a bug, so neither is inert.
+        */}
         {panes > 1 && counts !== null ? (
-          <p className={styles.summary}>
-            <span className={styles.running}>{counts.status.running} running</span>
+          <div className={styles.summary} role="group" aria-label="Quick filters">
+            <button
+              type="button"
+              className={[styles.summaryButton, styles.collectable].join(" ")}
+              aria-pressed={filters.uncollected === true}
+              onClick={() =>
+                applyFilters(
+                  filters.uncollected === true
+                    ? withoutUncollected(filters)
+                    : { ...filters, uncollected: true }
+                )
+              }
+            >
+              {counts.uncollected} to collect
+            </button>
             <span className={styles.summaryDot} aria-hidden="true">
               ·
             </span>
-            <span className={styles.collectable}>{counts.uncollected} to collect</span>
-          </p>
+            <button
+              type="button"
+              className={[styles.summaryButton, styles.running].join(" ")}
+              aria-pressed={filters.status === "running"}
+              onClick={() =>
+                applyFilters(
+                  filters.status === "running"
+                    ? withoutStatus(filters)
+                    : { ...filters, status: "running" }
+                )
+              }
+            >
+              {counts.status.running} running
+            </button>
+          </div>
         ) : null}
 
         {/* The design's primary action sits at the top-right of the register.

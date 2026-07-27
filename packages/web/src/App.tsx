@@ -66,8 +66,9 @@ function Shell({ mode }: { mode: ShellMode }): ReactElement {
           <Register selectedId={selectedId} />
         )
       }
-      // At three panes the detail pane is always present, showing the resting
-      // state when nothing is selected; AppShell owns that rendering.
+      // `null` means nothing is selected, and the shell then does not render
+      // the detail pane at all — the register spans the whole row until a row
+      // is chosen (ADR 0026).
       detail={
         selectedId === null ? null : (
           <TaskDetail id={selectedId} onBack={() => navigate("/")} />

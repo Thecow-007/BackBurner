@@ -12,24 +12,117 @@
  */
 
 .register {
-  /* gutter · HANDLE · STATUS · LANE · ATTEMPTS · CREATED · NOTE.
-   * NOTE carries error text and must never ellipse below ~180px, which is why
-   * its track has a floor rather than a bare 1fr.
+  /*
+   * ── The row grid (ui-spec §2) ───────────────────────────────────────────
+   *
+   * Full set, widest first:
+   *   gutter · HANDLE · STATUS · COLLECTED · LANE · ATTEMPTS · CREATED · NOTE
+   *
+   * `--register-tracks` and the `--register-*` column flags are declared HERE
+   * and inherit into TaskRow.module.css. The header line and every row read the
+   * same custom properties, which is what makes "header and rows share
+   * identical tracks and gap" (ui-spec §2) impossible to break from one side —
+   * there is no second list of tracks anywhere to drift from this one.
    *
    * HANDLE is 132px, not the design's 116px. 116 was budgeted against
    * eight-character samples (`scrape-1`); the seeded set already reaches
    * `report-10`, which truncated to `report-…`, and handle numbers only grow
    * from there. Truncating the handle is not an option in a product whose
-   * central idea is the handle, so the 16px comes out of NOTE's flexible
-   * track — every other track, and the 12px gap, are untouched and NOTE stays
-   * far above its 180px floor at every supported width. */
-  --register-tracks: 4px 132px 116px 70px 82px 96px minmax(180px, 1fr);
+   * central idea is the handle.
+   *
+   * The tracks are chosen by CONTAINER width, not viewport width, because the
+   * two are not related by one formula: at a 1280px viewport the register is
+   * 603px (three panes: 230 sidebar + 446 detail come out first), while at
+   * 1279px it is 1049px (two panes). The same pixel width is a cramped pane or
+   * a roomy one depending on which layout won, so only the pane itself can
+   * answer. Breakpoints and the drop order are recorded in ui-spec §2 and
+   * ADR 0024.
+   *
+   * Every fixed track below is its measured content plus a few px of slack:
+   * HANDLE 132 holds `report-100` (81) + the seed badge (39) + their 6px gap;
+   * STATUS 104 holds the widest chip, `cancelled` (97); COLLECTED 84 holds the
+   * `collected` chip (79); ATTEMPTS 76 holds its own header label (58) plus the
+   * 12px separation below; CREATED 72 holds `365 d ago` (65) and the
+   * `CREATED ↓` header (66).
+   *
+   * This block is the NARROWEST set — the one a 603px pane gets. NOTE carries
+   * error text and never ellipses below ~180px, so its track keeps a floor
+   * rather than a bare 1fr, and the columns that a narrow pane cannot afford
+   * are switched off rather than allowed to overflow.
+   */
+  --register-tracks: 4px 132px 104px 72px minmax(180px, 1fr);
+  --register-lane: none;
+  --register-attempts: none;
+  --register-collected: none;
+  --register-note: flex;
+  /* ATTEMPTS is right-aligned digits and CREATED is left-aligned digits; the
+   * 12px gap alone let the two columns of figures read as one. This pushes the
+   * attempts figure back off the boundary and is applied by the header cell and
+   * the row cell from this one declaration, so they cannot drift. */
+  --register-attempts-pad: var(--s-5);
 
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
   background: var(--bg-app);
+}
+
+/*
+ * The register is its own query container — but only from 900px, where the
+ * desktop grid exists at all. Below that the list is stacked cards and the
+ * "New task" button is `position: fixed`; size containment would make this
+ * element that button's containing block and quietly un-fix it.
+ */
+@media (min-width: 900px) {
+  .register {
+    container-type: inline-size;
+  }
+}
+
+/*
+ * A container never matches its own query, so the sets below are declared on
+ * the two subtrees that consume them — the header line and the scrolling list.
+ * Both are children of the container, so both always resolve the same tier.
+ *
+ * Each step adds one column back, and every threshold is the arithmetic point
+ * at which NOTE would otherwise fall below its 180px floor, plus ~12px for the
+ * scroll container's scrollbar. The order runs from the column the row can
+ * best do without to the one it cannot (ui-spec §2, ADR 0024):
+ *
+ *   ≥ 670  COLLECTED takes its own track and leaves the NOTE cell
+ *   ≥ 760  ATTEMPTS returns
+ *   ≥ 820  LANE returns — the full eight
+ *
+ * LANE goes first because the lane is the handle's own prefix (`scrape-1`);
+ * ATTEMPTS next because the note already states the budget on the rows where
+ * attempts are in play. Below 670 — which is only ever the three-pane layout at
+ * a 1280–1346px viewport, where the detail pane is on screen carrying all of
+ * it anyway — the collected chip folds back beside the note.
+ */
+@container (min-width: 670px) {
+  .head,
+  .scroll {
+    --register-tracks: 4px 132px 104px 84px 72px minmax(180px, 1fr);
+    --register-collected: block;
+    --register-note: contents;
+  }
+}
+
+@container (min-width: 760px) {
+  .head,
+  .scroll {
+    --register-tracks: 4px 132px 104px 84px 76px 72px minmax(180px, 1fr);
+    --register-attempts: block;
+  }
+}
+
+@container (min-width: 820px) {
+  .head,
+  .scroll {
+    --register-tracks: 4px 132px 104px 84px 56px 76px 72px minmax(180px, 1fr);
+    --register-lane: block;
+  }
 }
 
 /* ── Toolbar ─────────────────────────────────────────────────────────────── */
@@ -111,7 +204,13 @@
   font-weight: 700;
 }
 
-/* `N running · N to collect` — both numbers are the server's (ADR 0018). */
+/*
+ * `N to collect · N running` — both numbers are the server's (ADR 0018), and
+ * both are BUTTONS that open the list they describe (ui-spec §3.10). The
+ * treatment says "pressable" with a hairline border and a hover fill rather
+ * than with a button shape: the design's line is a quiet mono summary, and one
+ * clickable number beside one inert one is what would read as a bug.
+ */
 .summary {
   display: flex;
   align-items: center;
@@ -121,6 +220,29 @@
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.summaryButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 var(--s-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-chip);
+  background: transparent;
+  font: inherit;
+  font-variant-numeric: inherit;
+  color: inherit;
+}
+
+.summaryButton:hover {
+  border-color: var(--line);
+  background: var(--bg-raised);
+}
+
+.summaryButton[aria-pressed="true"] {
+  border-color: var(--line-strong);
+  background: var(--bg-raised);
 }
 
 .running {
@@ -150,8 +272,69 @@
   color: var(--text-quiet);
 }
 
+/*
+ * ── Header cells: placed by hand, never auto-flowed ───────────────────────
+ *
+ * COLLECTED sits at track 4, between STATUS and LANE, but the header markup is
+ * seven spans and this stylesheet cannot add an eighth. So the label is drawn
+ * by `::before` at an explicit track, and every other cell is placed
+ * explicitly too: the trailing cells count back from the end (`-2` is the last
+ * track), so one set of rules is correct for all four track sets — a cell
+ * cannot land in the wrong column when a column disappears.
+ *
+ * `grid-row: 1` on every one of them is load-bearing rather than decorative.
+ * Auto-placement walks a cursor forward and drops to a new row whenever an
+ * item's explicit column is behind the cursor, so a header whose first item is
+ * the COLLECTED pseudo-element at track 4 would push HANDLE onto a second row.
+ */
+.head > *,
+.head::before {
+  grid-row: 1;
+}
+
+.head > *:nth-child(1) {
+  grid-column: 1; /* gutter */
+}
+
+.head > *:nth-child(2) {
+  grid-column: 2; /* HANDLE */
+}
+
+.head > *:nth-child(3) {
+  grid-column: 3; /* STATUS */
+}
+
+/* The eighth column's label. `collected` is a lease state and its column is
+ * headed with the same word the chip carries — never abbreviated (ui-spec
+ * §3.2). It disappears with its track at the narrowest set. */
+.head::before {
+  content: "COLLECTED";
+  grid-column: 4;
+  display: var(--register-collected, none);
+}
+
+.head > *:nth-child(4) {
+  grid-column: -5 / -4; /* LANE */
+  display: var(--register-lane, none);
+}
+
+.head > *:nth-child(5) {
+  grid-column: -4 / -3; /* ATTEMPTS */
+  display: var(--register-attempts, none);
+}
+
+.head > *:nth-child(6) {
+  grid-column: -3 / -2; /* CREATED */
+}
+
+.head > *:nth-child(7) {
+  grid-column: -2 / -1; /* NOTE */
+}
+
 .headRight {
   text-align: right;
+  /* Identical to the row's attempts cell, from the same declaration. */
+  padding-right: var(--register-attempts-pad);
 }
 
 .headSortCell {
@@ -188,6 +371,14 @@
   /* Wide content scrolls in its own container; the page never scrolls
    * sideways (ui-spec §2). */
   overflow-x: hidden;
+  /*
+   * The tail of an infinite list has to be readable. Without this the last row
+   * or two sit flush against the bottom edge, where the browser's own
+   * link-target tooltip covers them — and a row you cannot scroll into view is
+   * a row you cannot read. This lets the final row be scrolled up to roughly
+   * the lower middle of the pane.
+   */
+  padding-bottom: clamp(180px, 40vh, 480px);
 }
 
 .rows,
@@ -332,10 +523,12 @@
     padding: var(--s-4) var(--s-7);
   }
 
-  /* Clears the shell's fixed bottom action bar so the last card is reachable;
-   * an infinite list must not end underneath a button. */
+  /* Clears the shell's fixed bottom action bar so the last card is reachable —
+   * an infinite list must not end underneath a button — and then the same
+   * scroll-past room the desktop list gets, so the last card can be brought up
+   * off the bottom edge instead of being read through a tooltip. */
   .scroll {
-    padding-bottom: 86px;
-    padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(86px + clamp(180px, 40vh, 480px));
+    padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px) + clamp(180px, 40vh, 480px));
   }
 }

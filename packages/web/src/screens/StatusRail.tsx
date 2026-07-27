@@ -10,7 +10,7 @@
 import type { CSSProperties, ReactElement } from "react";
 
 import { STATUS_ORDER, statusPresentation } from "../lib/status.js";
-import { formatCount, useStatusFilter } from "./Sidebar.js";
+import { formatCount, useStatusFilter, useUncollectedFilter } from "./Sidebar.js";
 import styles from "./StatusRail.module.css";
 
 export interface StatusRailProps {
@@ -20,10 +20,28 @@ export interface StatusRailProps {
 
 export function StatusRail({ className }: StatusRailProps): ReactElement {
   const status = useStatusFilter();
+  const uncollected = useUncollectedFilter();
 
   return (
     <div className={[styles.root, className].filter(Boolean).join(" ")}>
-      <div className={styles.scroller} role="group" aria-label="Filter by status">
+      <div className={styles.scroller} role="group" aria-label="Filter the register">
+        {/* Leading, before `all`: at one pane this is the fastest route to the
+            work that is actually waiting on the operator. It is not a status —
+            it carries no status glyph and takes the ready hue on its own count
+            (ui-spec §3.1). */}
+        <button
+          type="button"
+          className={[styles.chip, styles.collectChip].join(" ")}
+          aria-pressed={uncollected.active}
+          onClick={uncollected.toggle}
+        >
+          to collect
+          <span className={styles.sep} aria-hidden="true">
+            ·
+          </span>
+          <span className={styles.collectCount}>{formatCount(uncollected.count)}</span>
+        </button>
+
         <button
           type="button"
           className={styles.chip}

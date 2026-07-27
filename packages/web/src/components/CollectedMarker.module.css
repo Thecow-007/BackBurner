@@ -1,12 +1,27 @@
-/* Collected marker — ui-spec §3.2. Quiet, dotted, never abbreviated. */
+/*
+ * Collected marker — ui-spec §3.2, ADR 0024.
+ *
+ * The status-chip recipe (mono 11px, padding 3x9, radius 999) in a hue that is
+ * neither one of the five statuses nor ember. `collected` is a HANDLE-LEASE
+ * state, not a status: the task's own chip is untouched and keeps its colour,
+ * and this sits beside it as a second, differently-coloured object rather than
+ * pretending to be a sixth status.
+ *
+ * The word is never abbreviated — collected-vs-uncollected *is* the lease
+ * concept, which is the central idea of this product.
+ */
 
 .marker {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 3px 9px;
+  border: 1px solid var(--chip-collected-border);
+  border-radius: var(--r-chip);
+  background: var(--chip-collected-bg);
+  color: var(--collected);
   font-family: var(--font-mono);
-  font-size: var(--fs-micro);
-  line-height: 1.2;
-  color: var(--text-dim);
-  /* The dotted rule is what separates the marker from the row's other prose —
-   * it reads as an annotation on the task, not as a second status. */
-  border-bottom: 1px dotted var(--line-strong);
+  font-size: var(--fs-mono-meta);
+  font-weight: 600;
   white-space: nowrap;
 }

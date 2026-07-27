@@ -31,7 +31,7 @@ import { Link, useLocation } from "react-router-dom";
 import { ConnectionIndicator } from "../components/ConnectionIndicator.js";
 import { maskKey } from "../lib/format.js";
 import { STATUS_ORDER, statusPresentation } from "../lib/status.js";
-import type { TaskStatus } from "../lib/types.js";
+import type { TaskFilters, TaskStatus } from "../lib/types.js";
 import {
   useActions,
   useAsOfClock,
@@ -108,6 +108,44 @@ export function useStatusFilter(): StatusFilterModel {
   );
 }
 
+/**
+ * The `to collect` filter — `?uncollected=true`, which restricts the list to
+ * `status IN ('ready','failed') AND collected = false` (api-contract §7).
+ *
+ * It is NOT a status and is deliberately not modelled as one: ui-spec §3.1's
+ * "there is no sixth status" has to keep reading true, so this lives in its own
+ * model, its own row, and its own count. `counts.uncollected` is that exact
+ * predicate, which is why the number and the list it opens can never disagree.
+ */
+export interface UncollectedFilterModel {
+  active: boolean;
+  /** `counts.uncollected`, or null before the first snapshot. */
+  count: number | null;
+  toggle(): void;
+}
+
+export function useUncollectedFilter(): UncollectedFilterModel {
+  const counts = useCounts();
+  const filters = useFilters();
+  const { setFilters } = useActions();
+
+  return useMemo(
+    () => ({
+      active: filters.uncollected === true,
+      count: counts?.uncollected ?? null,
+      toggle: () => {
+        const next: TaskFilters = { ...filters };
+        // Absent, never `false`: the API accepts only the literal `true` and
+        // 400s on anything else (api-contract §7).
+        if (next.uncollected === true) delete next.uncollected;
+        else next.uncollected = true;
+        void setFilters(next);
+      },
+    }),
+    [counts, filters, setFilters]
+  );
+}
+
 export interface LaneFilterModel {
   /** The engine's REGISTERED lanes, so a user with zero tasks still gets a
    *  working picker (`counts.lanes`, ADR 0018). */
@@ -165,6 +203,7 @@ export function Sidebar({
   const { label } = useAsOfClock();
   const counts = useCounts();
   const status = useStatusFilter();
+  const uncollected = useUncollectedFilter();
   const lanes = useLaneFilter();
   const { apiKey } = useAuth();
   const { signOut } = useActions();
@@ -223,6 +262,26 @@ export function Sidebar({
           ) : null}
         </button>
       </nav>
+
+      {/*
+        The one filter that is not a status and not a lane, so it gets a band of
+        its own between the two — hairline above and below, full width, in the
+        ready hue because "waiting to be collected" is finished work.
+
+        It is deliberately OUTSIDE the STATUS group. `uncollected` spans two
+        statuses and a lease flag; dropping it into that list would make it read
+        as a sixth status, which ui-spec §3.1 forbids.
+      */}
+      <button
+        type="button"
+        className={styles.collectRow}
+        aria-pressed={uncollected.active}
+        onClick={uncollected.toggle}
+      >
+        <span className={styles.collectDot} aria-hidden="true" />
+        <span className={styles.collectLabel}>to collect</span>
+        <span className={styles.collectCount}>{formatCount(uncollected.count)}</span>
+      </button>
 
       <div className={styles.section}>
         <h2 className={styles.sectionLabel} id={statusLabelId}>

@@ -67,6 +67,31 @@
   color: var(--text-quiet);
 }
 
+/*
+ * `to collect` — the register's uncollected filter, leading the rail. Not a
+ * status: no glyph, and the ready hue appears only on the number, which is the
+ * count that opens it. The border marks it as a different KIND of control from
+ * the five that follow without shouting.
+ */
+.collectChip {
+  border-color: var(--btn-collect-border);
+}
+
+.collectChip[aria-pressed="true"] {
+  border-color: var(--st-ready);
+  background: var(--btn-collect-bg);
+}
+
+.collectCount {
+  font-size: var(--fs-mono-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--st-ready);
+}
+
+.sep {
+  color: var(--line-strong);
+}
+
 /* Right-edge fade (ui-spec §3.10), on the non-scrolling wrapper so it stays
  * pinned while the chips move under it. */
 .fade {

@@ -39,6 +39,17 @@ export interface Task {
 }
 
 /**
+ * One mock-worker-backed lane's range for an omitted `params.duration_ms`
+ * (api-contract §6.2 `lane_defaults`). The submit form's duration helper text
+ * is sourced from this and from nothing else — a hard-coded "3–15 s" is wrong
+ * on `build` (20–90 s), and a range the client cannot source is a range it must
+ * not assert (frontend-brief §6.5).
+ */
+export interface LaneDefault {
+  duration_ms: { min: number; max: number };
+}
+
+/**
  * Aggregate counts, an additive `[EXTENSION]` object on the `GET /tasks`
  * response (api-contract §6.2, ADR 0018). Every number the sidebar, the
  * register header and the filter sheet display comes from here — a count
@@ -47,13 +58,16 @@ export interface Task {
  *
  * Each field has a DIFFERENT filter basis, because a count must always match
  * the list it opens:
- *  - `all`         respects from/to; ignores status and lane
+ *  - `all`         respects from/to; ignores status, lane, uncollected, q
  *  - `matching`    respects every active filter — what the list actually holds
- *  - `uncollected` ready|failed and not collected; respects lane/from/to
- *  - `status.*`    respects lane/from/to; ignores the status filter
- *  - `lane.*`      respects status/from/to; ignores the lane filter
+ *  - `uncollected` ready|failed and not collected; respects lane/from/to only
+ *                  — it IS the uncollected predicate, so narrowing it by its own
+ *                  filter would collapse it to itself the moment it is clicked
+ *  - `status.*`    respects lane/from/to/uncollected; ignores the status filter
+ *  - `lane.*`      respects status/from/to/uncollected; ignores the lane filter
  *  - `lanes`       the engine's REGISTERED lanes, not a DISTINCT over data,
  *                  so a user with zero tasks still gets a lane picker
+ *  - `lane_defaults` ignores every filter; one entry per mock-worker lane
  */
 export interface Counts {
   all: number;
@@ -62,6 +76,9 @@ export interface Counts {
   status: Record<TaskStatus, number>;
   lane: Record<string, number>;
   lanes: string[];
+  /** Optional on purpose: a lane backed by a non-mock worker has no range, and
+   * a server that omits the field entirely must not break the submit form. */
+  lane_defaults?: Record<string, LaneDefault>;
 }
 
 /** `GET /tasks` envelope (api-contract §6.2). */
@@ -162,13 +179,21 @@ export interface NotificationNotice {
 }
 
 /** Dashboard filter/sort selection — maps 1:1 to `GET /tasks` query params
- * (frontend-brief §4.2). All optional; absent means "All". */
+ * (frontend-brief §4.2, §8.2). All optional; absent means "All".
+ *
+ * `uncollected` is `true` or absent and nothing else, mirroring the wire
+ * contract exactly: the server accepts only the literal string `true` and 400s
+ * on `false`/`1`/`yes`/empty, because a client that wants the filter off omits
+ * the parameter (api-contract §7). Modelling it as `boolean` would invite a
+ * `false` that the API rejects. `q` is deliberately NOT here: search is an
+ * overlay-local read that never becomes register state (ADR 0027). */
 export interface TaskFilters {
   status?: TaskStatus;
   lane?: string;
   from?: string;
   to?: string;
   sort?: string; // `created_at|updated_at` + optional `:asc|:desc`
+  uncollected?: true;
 }
 
 /** Submit-form payload (frontend-brief §4.3). */
@@ -177,5 +202,9 @@ export interface SubmitInput {
   duration_ms?: number;
   fail?: boolean;
   fail_permanent?: boolean;
+  /** Flaky: retryable failure while `attempt <= fail_times`, then success.
+   * Integer 1–9 on the wire (api-contract §1); the form keeps it below the
+   * attempt budget so the task can actually recover. */
+  fail_times?: number;
   max_attempts?: number;
 }

@@ -26,7 +26,7 @@ import { SkeletonRows } from "../components/SkeletonRows.js";
 import { StatusChip } from "../components/StatusChip.js";
 import { StatusSlot } from "../components/StatusSlot.js";
 import { Timeline } from "../components/Timeline.js";
-import { formatAttempts, formatRelative } from "../lib/format.js";
+import { formatAbsolute, formatAttempts, formatRelative } from "../lib/format.js";
 import { allowedActions } from "../lib/matrix.js";
 import { durationReadout, isLive } from "../lib/status.js";
 import type { HistoryTransition, Task } from "../lib/types.js";
@@ -192,8 +192,11 @@ export function TaskDetail({ id, onBack }: TaskDetailProps): ReactElement {
 
       <ActionErrorNote taskId={task.id} />
 
-      {/* The one block that speaks in UTC. Notes and the timeline read in local
-       * wall clock; an operator correlating with a log needs the Z instant. */}
+      {/* The one block that still speaks in UTC — demoted, not dropped. The
+       * human reading of the instant leads, because that is the clock an
+       * operator reads the screen in; the exact `Z` string stays underneath it,
+       * selectable and copyable, because that is what an operator correlating
+       * with a server log has to paste. */}
       <dl className={styles.meta}>
         <div className={styles.metaItem}>
           <dt className={styles.metaTerm}>lane</dt>
@@ -205,20 +208,8 @@ export function TaskDetail({ id, onBack }: TaskDetailProps): ReactElement {
             {formatAttempts(task.attempts, task.max_attempts, task.status)}
           </dd>
         </div>
-        <div className={styles.metaItem}>
-          <dt className={styles.metaTerm}>created</dt>
-          <dd className={styles.metaValue}>
-            <time dateTime={task.created_at}>{task.created_at}</time>{" "}
-            <span className={styles.relative}>{formatRelative(task.created_at, now)}</span>
-          </dd>
-        </div>
-        <div className={styles.metaItem}>
-          <dt className={styles.metaTerm}>updated</dt>
-          <dd className={styles.metaValue}>
-            <time dateTime={task.updated_at}>{task.updated_at}</time>{" "}
-            <span className={styles.relative}>{formatRelative(task.updated_at, now)}</span>
-          </dd>
-        </div>
+        <Stamp term="created" iso={task.created_at} now={now} />
+        <Stamp term="updated" iso={task.updated_at} now={now} />
       </dl>
 
       {/* Verbatim, wrapping, never truncated, and identical whether or not the
@@ -267,13 +258,50 @@ export function TaskDetail({ id, onBack }: TaskDetailProps): ReactElement {
       ) : null}
 
       <section className={styles.block}>
-        <Timeline transitions={transitions ?? []} label={timelineLabel(task)} />
+        {/* The same ticking clock the relative supplements use, so the timeline
+         * can tell a transition from today apart from a seeded one months old
+         * and date the latter. */}
+        <Timeline transitions={transitions ?? []} label={timelineLabel(task)} now={now} />
       </section>
     </div>
   );
 }
 
 // ── Local pieces ────────────────────────────────────────────────────────────
+
+/**
+ * A `created` / `updated` entry: the human absolute plus its relative
+ * supplement on the first line, the engine's exact ISO instant on the second.
+ *
+ * Both lines are `<time>` elements carrying the same machine-readable
+ * `dateTime`, so nothing about the timestamp is only available visually — and
+ * the `Z` string is rendered verbatim, never reformatted, because a value
+ * pasted into a log query has to match what the API said character for
+ * character.
+ */
+function Stamp({ term, iso, now }: { term: string; iso: string; now: number }): ReactElement {
+  return (
+    <div className={styles.metaItem}>
+      <dt className={styles.metaTerm}>{term}</dt>
+      <dd className={`${styles.metaValue} ${styles.stamp}`}>
+        <span className={styles.stampHuman}>
+          <time dateTime={iso}>{formatAbsolute(iso)}</time>
+          <span className={styles.relative}> · {formatRelative(iso, now)}</span>
+        </span>
+        <span className={styles.stampInstant}>
+          <time className={styles.instant} dateTime={iso}>
+            {iso}
+          </time>
+          <CopyButton
+            value={iso}
+            label={`Copy the ${term} timestamp`}
+            className={styles.copyQuiet}
+          />
+        </span>
+      </dd>
+    </div>
+  );
+}
 
 const CONFIRM_MS = 1500;
 
@@ -286,7 +314,16 @@ const COPY_LABEL: Record<CopyState, string> = {
   failed: "copy failed",
 };
 
-function CopyButton({ value, label }: { value: string; label: string }): ReactElement {
+function CopyButton({
+  value,
+  label,
+  className,
+}: {
+  value: string;
+  label: string;
+  /** The timestamps take a quieter variant — same control, less furniture. */
+  className?: string;
+}): ReactElement {
   const [state, setState] = useState<CopyState>("idle");
   const timer = useRef<number | null>(null);
 
@@ -317,7 +354,12 @@ function CopyButton({ value, label }: { value: string; label: string }): ReactEl
   return (
     // The visible word changes to confirm; the accessible name does not, so a
     // screen reader is never told the button is called "copied".
-    <button type="button" className={styles.copy} onClick={copy} aria-label={label}>
+    <button
+      type="button"
+      className={[styles.copy, className].filter(Boolean).join(" ")}
+      onClick={copy}
+      aria-label={label}
+    >
       {COPY_LABEL[state]}
     </button>
   );

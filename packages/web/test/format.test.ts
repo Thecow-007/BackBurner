@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   durationBetween,
+  formatAbsolute,
   formatAttempts,
+  formatClock,
   formatDuration,
   formatRelative,
+  formatTimelineTime,
   humanizeMs,
   maskKey,
 } from "../src/lib/format.js";
@@ -92,6 +95,61 @@ describe("maskKey", () => {
 
   it("renders nothing when there is no key", () => {
     expect(maskKey(null)).toBe("");
+  });
+});
+
+/**
+ * The detail panel leads with this and keeps the ISO instant underneath, so the
+ * only thing it must never do is invent or reformat the instant itself — it
+ * renders the machine's local reading of exactly the string it was given.
+ */
+describe("formatAbsolute", () => {
+  // Local, so the expectation is built from the same Date the SPA renders from
+  // rather than from a hard-coded zone.
+  const local = (iso: string): string => {
+    const d = new Date(iso);
+    const p = (n: number): string => String(n).padStart(2, "0");
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${p(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()} · ${formatClock(d)}`;
+  };
+
+  it("reads as a date and a wall clock, joined by the design's separator", () => {
+    const iso = "2026-07-26T14:32:07.000Z";
+    expect(formatAbsolute(iso)).toBe(local(iso));
+    expect(formatAbsolute(iso)).toMatch(/^\d{2} [A-Z][a-z]{2} \d{4} · \d{2}:\d{2}:\d{2}$/);
+  });
+
+  it("pads the day, so a column of these lines up", () => {
+    expect(formatAbsolute("2026-07-03T12:00:00.000Z")).toMatch(/^\d{2} Jul 2026 · /);
+  });
+
+  it("renders nothing rather than NaN for a value that is not a timestamp", () => {
+    expect(formatAbsolute("not-a-date")).toBe("");
+    expect(formatAbsolute("")).toBe("");
+  });
+});
+
+describe("formatTimelineTime", () => {
+  const now = Date.parse("2026-07-26T12:30:00.000Z");
+
+  it("stays a bare clock for a transition from today, exactly as the design draws it", () => {
+    expect(formatTimelineTime("2026-07-26T12:04:03.000Z", now)).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  });
+
+  it("dates anything older — a bare clock on a seeded row is a riddle", () => {
+    expect(formatTimelineTime("2026-03-04T12:00:00.000Z", now)).toMatch(
+      /^04 Mar · \d{2}:\d{2}:\d{2}$/
+    );
+  });
+
+  it("adds the year only when the year differs", () => {
+    expect(formatTimelineTime("2025-12-30T12:00:00.000Z", now)).toMatch(
+      /^30 Dec 2025 · \d{2}:\d{2}:\d{2}$/
+    );
+  });
+
+  it("degrades to placeholder dashes rather than NaN", () => {
+    expect(formatTimelineTime("not-a-date", now)).toBe("--:--:--");
   });
 });
 

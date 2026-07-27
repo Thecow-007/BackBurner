@@ -151,6 +151,78 @@
   font-weight: 700;
 }
 
+/* ── The `to collect` filter row ─────────────────────────────────────────── */
+
+/*
+ * Its own band between the nav block and the STATUS group, hairlined on both
+ * sides. `uncollected` is neither a status nor a lane — it spans two statuses
+ * plus the lease flag — so it is not inside either list, and ui-spec §3.1's
+ * "there is no sixth status" keeps reading true.
+ *
+ * The ready hue is carried by the dot and by the number, not by a fill: an
+ * always-green band in the sidebar would read as a state rather than a control.
+ */
+.collectRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 34px;
+  margin: var(--s-4) 0;
+  padding: 7px var(--s-7);
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  color: var(--text-dim);
+}
+
+.collectRow:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.collectRow[aria-pressed="true"] {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+/* Sits in the same 12px glyph column the status rows use, so the three blocks
+ * share one left edge. */
+.collectDot {
+  width: 12px;
+  flex: none;
+  height: 7px;
+  border-radius: var(--r-chip);
+  background: var(--st-ready);
+  opacity: 0.55;
+}
+
+.collectRow[aria-pressed="true"] .collectDot {
+  opacity: 1;
+}
+
+.collectLabel {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-row);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The count is the only green text: it is the number that opens this filter. */
+.collectCount {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--st-ready);
+}
+
 /* ── Count sections ──────────────────────────────────────────────────────── */
 
 .sectionLabel {

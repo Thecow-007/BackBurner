@@ -59,6 +59,31 @@
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * `to collect` — the `?uncollected=true` filter, leading the chip row. It is
+ * NOT a status (ui-spec §3.1), so it carries no status glyph and the ready hue
+ * touches only its number; the border says "different kind of control" without
+ * the row reading as a sixth chip in the status set.
+ */
+.collectChip {
+  border-color: var(--btn-collect-border);
+}
+
+.collectChip.chipOn {
+  border-color: var(--st-ready);
+  background: var(--btn-collect-bg);
+}
+
+.chipSep {
+  color: var(--line-strong);
+}
+
+.collectCount {
+  color: var(--st-ready);
+  font-size: var(--fs-mono-meta);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Mobile: the horizontally scrolling chip rail ─────────────────────────── */
 
 .rail {

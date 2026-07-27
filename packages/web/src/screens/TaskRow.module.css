@@ -1,11 +1,16 @@
 /*
  * Desktop register row — docs/ui-spec.md §2 (tracks) and §3.4 (row content).
  *
- * `--register-tracks` and `--register-gutter` are declared by Register.module.css
- * on the register root and inherit down to every row. That is deliberate: the
- * header line and the rows MUST share identical tracks and gap (ui-spec §2), and
- * a single inherited custom property is the only way to make drift impossible
- * across two CSS Modules.
+ * `--register-tracks` and the `--register-*` column flags are declared by
+ * Register.module.css and inherit down to every row. That is deliberate: the
+ * header line and the rows MUST share identical tracks and gap (ui-spec §2),
+ * and a single set of inherited custom properties is the only way to make drift
+ * impossible across two CSS Modules. THIS FILE DECIDES NO BREAKPOINTS — it only
+ * consumes what the register resolved for the width its pane actually has.
+ *
+ * Cells are placed explicitly, and the trailing ones count back from the end
+ * (`-2` is the last track), so one set of rules is correct for every track set:
+ * when a column disappears, nothing shuffles into the wrong place.
  *
  * Colours are var(--token) only; theme/tokens.css is the sole file in the SPA
  * where a literal may appear.
@@ -40,9 +45,30 @@
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
+/*
+ * Every cell sits on row 1 explicitly. This is load-bearing, not tidiness:
+ * auto-placement walks a cursor forward and drops to a new row whenever an
+ * item's explicit column is behind the cursor, and the collected chip's column
+ * (4) is behind the cells that precede it in the markup. Without this the chip
+ * would silently start a second grid row inside a 34px-tall row.
+ */
+.gutter,
+.handleCell,
+.statusCell,
+.collectedCell,
+.laneCell,
+.attemptsCell,
+.createdCell,
+.noteCell,
+.note,
+.noteError {
+  grid-row: 1;
+}
+
 /* ── Gutter ──────────────────────────────────────────────────────────────── */
 
 .gutter {
+  grid-column: 1;
   height: 100%;
 }
 
@@ -55,6 +81,7 @@
 /* ── Cells ───────────────────────────────────────────────────────────────── */
 
 .handleCell {
+  grid-column: 2;
   display: flex;
   align-items: baseline;
   gap: var(--s-2);
@@ -85,8 +112,27 @@
 }
 
 .statusCell {
+  grid-column: 3;
   display: flex;
   min-width: 0;
+}
+
+/*
+ * The collected chip's own column (ui-spec §3.2, ADR 0024).
+ *
+ * It lives in the NOTE cell in the markup — the one place it can also sit when
+ * there is no room for a column of its own — and is lifted into track 4 by
+ * turning the note cell into `display: contents`, so the chip and the note text
+ * become two grid items from one wrapper. No DOM is duplicated and no cell is
+ * rendered twice; the header aligns to the same eight tracks via its own
+ * pseudo-element (Register.module.css).
+ *
+ * At the narrowest set the note cell is a flex cell again and this chip is back
+ * inside it, where `grid-column` simply does not apply.
+ */
+.collectedCell {
+  grid-column: 4;
+  justify-self: start;
 }
 
 .laneCell,
@@ -100,13 +146,32 @@
   white-space: nowrap;
 }
 
-/* Attempts is a column of figures, so it aligns on its right edge. */
+/* The lane is also the handle's own prefix (`scrape-1`), so this is the first
+ * column a narrow pane gives up. */
+.laneCell {
+  grid-column: -5 / -4;
+  display: var(--register-lane, none);
+}
+
+/* Attempts is a column of figures, so it aligns on its right edge — and it
+ * keeps a hard gap between its digits and CREATED's, from the same declaration
+ * the header cell uses. */
 .attemptsCell {
+  grid-column: -4 / -3;
+  display: var(--register-attempts, none);
   text-align: right;
+  padding-right: var(--register-attempts-pad);
+}
+
+.createdCell {
+  grid-column: -3 / -2;
 }
 
 .noteCell {
-  display: flex;
+  grid-column: -2 / -1;
+  /* `contents` wherever the collected chip has a column of its own; `flex`
+   * where it does not and has to sit beside the note again. */
+  display: var(--register-note, flex);
   align-items: center;
   gap: var(--s-3);
   min-width: 0;
@@ -114,6 +179,10 @@
 
 .note,
 .noteError {
+  grid-column: -2 / -1;
+  /* A grid item's automatic minimum size would defeat the ellipsis when the
+   * note cell is `contents` and this span is the grid item. */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

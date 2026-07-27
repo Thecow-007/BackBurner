@@ -3,15 +3,21 @@
  *
  * | width     | panes | detail lives                                          |
  * |-----------|-------|-------------------------------------------------------|
- * | ≥ 1280px  | three | persistent right pane, 446px                          |
+ * | ≥ 1280px  | three | right pane, ONLY while a task is selected             |
  * | 900–1279  | two   | replaces the register; the sidebar never moves        |
  * | < 900px   | one   | sidebar becomes a drawer; detail is a full screen     |
  *
- * The switch is pure CSS. No width listener exists anywhere in the SPA, so the
- * sidebar cannot reflow, remount or lose its scroll position when the viewport
- * changes — and both panes stay mounted, so crossing 1280 never refetches.
- * `data-detail` / `data-submit` on the root say WHICH route is showing; the
- * media queries say which pane wins at that width.
+ * The pane COUNT is pure CSS. No layout decision anywhere in the SPA reads the
+ * viewport width, so the sidebar cannot reflow, remount or lose its scroll
+ * position when the viewport changes — and both panes stay mounted, so crossing
+ * 1280 never refetches. `data-detail` / `data-submit` on the root say WHICH
+ * route is showing; the media queries say which pane wins at that width.
+ *
+ * Two widths are user-adjustable (ADR 0025). Each is spent inside a `clamp()`
+ * whose bounds are a pixel floor and a viewport fraction, so the caps — sidebar
+ * ≤ 30vw, detail ≤ 50vw — enforce themselves as the viewport changes, with no
+ * resize listener and no clamping logic in JS. A width dragged on a large
+ * monitor therefore cannot swallow a small one.
  *
  * Mobile-first: the base rules are the one-pane layout.
  *
@@ -134,9 +140,58 @@
   min-height: 0;
 }
 
-/* One pane: the sidebar is the drawer instead. */
+/* One pane: the sidebar is the drawer instead. The hairline against the
+ * register is drawn by the drag handle below, so the column itself must not
+ * draw a second rule beside it. */
 .shell .sidebar {
   display: none;
+  border-right: 0;
+}
+
+/* ── Drag handles (ADR 0025) ─────────────────────────────────────────────── */
+
+/*
+ * The visible rule stays one pixel: this IS the panel hairline, and a thick
+ * grab bar would be a new piece of chrome the design does not have. The target
+ * is widened by a transparent pseudo-element instead, which is why the handle
+ * is `position: relative` and sits above its neighbours.
+ *
+ * No transition anywhere on this element. Motion is limited to `pulse` and
+ * `spin` (ui-spec §1.3), and a transitioned drag lags behind the pointer.
+ */
+.handle {
+  display: none;
+  position: relative;
+  z-index: var(--z-row);
+  width: 1px;
+  flex: none;
+  align-self: stretch;
+  background: var(--line);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  right: -5px;
+}
+
+.handle:hover,
+.handle:focus-visible {
+  background: var(--line-strong);
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--line-strong);
+  outline-offset: 1px;
+}
+
+.handle:active {
+  background: var(--hairline);
 }
 
 .panes {
@@ -230,6 +285,14 @@
 
   .shell .sidebar {
     display: flex;
+    /* The floor holds the wordmark, the counts and the identity chip; the cap
+     * is a viewport fraction, so it re-evaluates itself on every resize. */
+    width: clamp(200px, var(--sidebar-w), 30vw);
+  }
+
+  /* The sidebar is a column here rather than a drawer, so it can be resized. */
+  .shell .sidebarHandle {
+    display: block;
   }
 
   /* The counts live in the sidebar again, so the rail retires. */
@@ -252,18 +315,30 @@
     display: flex;
   }
 
-  /* The hairline belongs to the third pane, so it appears exactly when that
-   * pane does — /submit hides it and leaves no rule floating at the edge. */
-  .detailPane {
-    display: flex;
-    width: var(--detail-w);
+  /*
+   * The third pane appears ONLY with a task selected (ADR 0026). It used to
+   * render always, holding a resting "Select a task…" panel; that cost the
+   * register 446px plus its rule at every width, which at a 1280px viewport
+   * left the register 603px — too narrow for its LANE, ATTEMPTS and COLLECTED
+   * columns to appear at all (ui-spec §2.1). Selecting a row brings the pane
+   * in; returning to `/` gives the width back.
+   *
+   * `display: flex` is inherited from the `[data-detail="true"]` rule above,
+   * which is what makes "not selected" mean "not shown" at every pane count
+   * from one declaration. `/submit` is never `data-detail`, so it never shows
+   * the pane either.
+   *
+   * The floor holds the duration readout and the timeline; the cap is a
+   * viewport fraction and re-evaluates itself as the window changes.
+   */
+  .shell[data-detail="true"] .detailPane {
+    width: clamp(360px, var(--detail-w), 50vw);
     flex: none;
-    border-left: 1px solid var(--line);
   }
 
-  /* /submit replaces the register AND the detail area with one panel
-   * (ui-spec §7); the sidebar persists. */
-  .shell[data-submit="true"] .detailPane {
-    display: none;
+  /* The handle draws this pane's left hairline, so it appears and disappears
+   * with the pane and leaves no rule floating at the edge. */
+  .shell[data-detail="true"] .detailHandle {
+    display: block;
   }
 }

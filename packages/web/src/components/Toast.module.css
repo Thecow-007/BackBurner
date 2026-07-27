@@ -1,6 +1,7 @@
 /*
- * Toast — the approved design's notification card. Ready reads green and
- * auto-dismisses; failed reads red and stays until the operator dismisses it.
+ * Toast — the approved design's notification card. Ready reads green and clears
+ * after 6s; failed reads red and clears after 15s (ADR 0023). Both hold their
+ * countdown while hovered or focused.
  *
  * No entrance or exit animation: ui-spec §1.3 permits exactly two animations
  * in the whole app (pulse, spin), so nothing here moves and there is no
@@ -28,7 +29,7 @@
 }
 
 /* A failure sits on its own red-shifted ground, not on ordinary chrome wearing
- * a red border — it is the one notice that persists until acknowledged. */
+ * a red border — it is the loudest thing the notification layer draws. */
 .failed {
   border-color: var(--btn-danger-border);
   border-left-color: var(--st-failed);

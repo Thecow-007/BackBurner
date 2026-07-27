@@ -94,6 +94,13 @@
   flex: none;
 }
 
+/*
+ * The line BETWEEN two events. It is not rendered at all on the final node of
+ * the final attempt group (see Timeline.tsx `terminal`), so the rail ends at
+ * the last dot instead of trailing a hairline into empty space. A node that is
+ * merely last within an earlier group, or one followed by a backoff marker,
+ * still has something below it to reach and keeps its stem.
+ */
 .stem {
   flex: 1;
   width: 1px;
@@ -105,6 +112,12 @@
   min-width: 0;
   margin-top: -3px;
   padding-bottom: var(--s-5);
+}
+
+/* Nothing follows the last node, so the panel ends at its meta line rather
+ * than on 12px of dead space. */
+.bodyEnd {
+  padding-bottom: 0;
 }
 
 .head {

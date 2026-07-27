@@ -184,3 +184,127 @@ describe("adjustCounts — the per-field filter bases", () => {
     expect(next?.matching).toBe(9);
   });
 });
+
+/**
+ * `?uncollected=true` (ADR 0022) is scope for `matching`, `status.*` and
+ * `lane.*` — and deliberately NOT for `all` or for the `uncollected` count
+ * itself, which IS that predicate. Getting this wrong produces the one bug
+ * ui-spec §3.10 names by name: a number that opens a list with a different
+ * number of rows in it.
+ */
+describe("adjustCounts — under the uncollected filter", () => {
+  const UNCOLLECTED: TaskFilters = { uncollected: true };
+
+  it("moves status.* only for tasks inside the uncollected set", () => {
+    // running → ready·uncollected: the task ENTERS the filtered scope, so the
+    // arrival side counts and the departure side does not.
+    const entering = adjustCounts(
+      counts(),
+      task({ status: "running" }),
+      task({ status: "ready", collected: false }),
+      UNCOLLECTED
+    );
+    expect(entering?.status.running).toBe(2); // untouched — running is out of scope
+    expect(entering?.status.ready).toBe(4);
+
+    // ready·uncollected → ready·collected: the task LEAVES the scope.
+    const leaving = adjustCounts(
+      counts(),
+      task({ status: "ready", collected: false }),
+      task({ status: "ready", collected: true }),
+      UNCOLLECTED
+    );
+    expect(leaving?.status.ready).toBe(2);
+  });
+
+  it("moves lane.* on the same basis", () => {
+    const leaving = adjustCounts(
+      counts(),
+      task({ status: "failed", collected: false, lane: "scrape" }),
+      task({ status: "failed", collected: true, lane: "scrape" }),
+      UNCOLLECTED
+    );
+    expect(leaving?.lane.scrape).toBe(5);
+
+    // A queued→running move never touches the lane numbers while the filter is
+    // on: neither end is uncollected work.
+    const irrelevant = adjustCounts(
+      counts(),
+      task({ status: "queued", lane: "scrape" }),
+      task({ status: "running", lane: "scrape" }),
+      UNCOLLECTED
+    );
+    expect(irrelevant?.lane.scrape).toBe(6);
+  });
+
+  it("leaves `all` alone — it is the whole register, filter or no filter", () => {
+    const next = adjustCounts(
+      counts(),
+      task({ status: "ready", collected: false }),
+      task({ status: "ready", collected: true }),
+      UNCOLLECTED
+    );
+    expect(next?.all).toBe(10);
+
+    // An arrival still lands in `all` even though a queued task is nowhere near
+    // the uncollected set.
+    const arrived = adjustCounts(counts(), undefined, task({ status: "queued" }), UNCOLLECTED);
+    expect(arrived?.all).toBe(11);
+  });
+
+  it("keeps the `uncollected` COUNT on its own basis, not its own filter", () => {
+    // If the count respected the filter it would stop moving the moment the
+    // filter was on — the badge would freeze at whatever it was when pressed.
+    const collected = adjustCounts(
+      counts(),
+      task({ status: "ready", collected: false }),
+      task({ status: "ready", collected: true }),
+      UNCOLLECTED
+    );
+    expect(collected?.uncollected).toBe(1);
+
+    const finished = adjustCounts(
+      counts(),
+      task({ status: "running" }),
+      task({ status: "ready", collected: false }),
+      UNCOLLECTED
+    );
+    expect(finished?.uncollected).toBe(3);
+  });
+
+  it("keeps the `uncollected` count ignoring the status filter, while respecting lane", () => {
+    const withStatus: TaskFilters = { uncollected: true, status: "failed" };
+    // A ready task is outside `status=failed`, but the uncollected count spans
+    // both statuses by definition, so it still moves.
+    const next = adjustCounts(
+      counts(),
+      task({ status: "running" }),
+      task({ status: "ready", collected: false }),
+      withStatus
+    );
+    expect(next?.uncollected).toBe(3);
+    expect(next?.matching).toBe(10); // ready is not `failed`, so the list is unchanged
+
+    const otherLane: TaskFilters = { uncollected: true, lane: "report" };
+    const wrongLane = adjustCounts(
+      counts(),
+      task({ status: "running", lane: "scrape" }),
+      task({ status: "ready", collected: false, lane: "scrape" }),
+      otherLane
+    );
+    expect(wrongLane?.uncollected).toBe(2);
+  });
+
+  it("takes a collected task out of `matching`, so the list and its badge agree", () => {
+    const before = counts({ matching: 2, uncollected: 2 });
+    const next = adjustCounts(
+      before,
+      task({ status: "ready", collected: false }),
+      task({ status: "ready", collected: true }),
+      UNCOLLECTED
+    );
+    // Both fall together: the row leaves the list and the badge that opened it.
+    expect(next?.matching).toBe(1);
+    expect(next?.uncollected).toBe(1);
+  });
+});

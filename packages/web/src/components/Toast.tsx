@@ -18,18 +18,36 @@ export interface ToastProps {
   /** Tapping the body opens the task. It must NEVER collect it. */
   onOpen(taskId: string): void;
   onDismiss(eventId: number): void;
-  /** Ready toasts auto-dismiss after ~6s; failures persist until dismissed. */
+  /** Overrides the per-kind default below. `0` means "never auto-dismiss". */
   autoDismissMs?: number;
 }
 
 const READY_AUTO_DISMISS_MS = 6000;
+/**
+ * A failure gets 15s — two and a half times a success, and long enough to read
+ * a wrapped engine reason — and then clears itself (ADR 0023).
+ *
+ * `frontend-brief.md` §7.1 originally said a failed toast "persists until
+ * dismissed". The assessment spec requires only that a finished job surface a
+ * notification with no action from the user; nothing requires persistence, and
+ * the notification centre remains the durable session record either way. What
+ * persistence actually produced was a stack of red cards the operator had to
+ * clear by hand.
+ */
+const FAILED_AUTO_DISMISS_MS = 15_000;
+/** Fine enough that a hover-paused countdown resumes without a visible jump. */
+const TICK_MS = 500;
 
 export function Toast({ notice, onOpen, onDismiss, autoDismissMs }: ToastProps): ReactElement {
   const ready = notice.kind === "ready";
-  // A failure never disappears on its own, whatever the caller passes: a
-  // missed failure is a task the operator never learns about.
-  const dismissAfterMs = ready ? (autoDismissMs ?? READY_AUTO_DISMISS_MS) : 0;
+  const dismissAfterMs =
+    autoDismissMs ?? (ready ? READY_AUTO_DISMISS_MS : FAILED_AUTO_DISMISS_MS);
   const [remainingMs, setRemainingMs] = useState(dismissAfterMs);
+  // A notice must not vanish out from under someone reading it, so the clock
+  // stops while the toast is hovered or holds keyboard focus, and resumes with
+  // whatever time was left (ADR 0023).
+  const [held, setHeld] = useState(false);
+  const remainingRef = useRef(dismissAfterMs);
 
   // The timer is armed once per notice. Keeping the callback in a ref means a
   // caller that re-creates `onDismiss` each render cannot restart the clock
@@ -40,18 +58,29 @@ export function Toast({ notice, onOpen, onDismiss, autoDismissMs }: ToastProps):
   }, [onDismiss]);
 
   useEffect(() => {
-    if (dismissAfterMs <= 0) return;
-    const startedAt = Date.now();
+    remainingRef.current = dismissAfterMs;
     setRemainingMs(dismissAfterMs);
-    const expiry = window.setTimeout(() => dismissRef.current(notice.eventId), dismissAfterMs);
+  }, [dismissAfterMs, notice.eventId]);
+
+  useEffect(() => {
+    if (dismissAfterMs <= 0 || held) return;
+    const budget = remainingRef.current;
+    if (budget <= 0) return;
+    const startedAt = Date.now();
+    const left = (): number => Math.max(0, budget - (Date.now() - startedAt));
+    const expiry = window.setTimeout(() => dismissRef.current(notice.eventId), budget);
     const tick = window.setInterval(() => {
-      setRemainingMs(Math.max(0, dismissAfterMs - (Date.now() - startedAt)));
-    }, 1000);
+      remainingRef.current = left();
+      setRemainingMs(remainingRef.current);
+    }, TICK_MS);
     return () => {
       window.clearTimeout(expiry);
       window.clearInterval(tick);
+      // Banked, so resuming picks up where the pause began rather than
+      // restarting the full countdown.
+      remainingRef.current = left();
     };
-  }, [dismissAfterMs, notice.eventId]);
+  }, [dismissAfterMs, held, notice.eventId]);
 
   const presentation = statusPresentation(notice.kind);
 
@@ -60,6 +89,13 @@ export function Toast({ notice, onOpen, onDismiss, autoDismissMs }: ToastProps):
       className={`${styles.toast} ${ready ? styles.ready : styles.failed}`}
       role={ready ? "status" : "alert"}
       aria-live={ready ? "polite" : "assertive"}
+      data-held={held ? "true" : undefined}
+      onMouseEnter={() => setHeld(true)}
+      onMouseLeave={() => setHeld(false)}
+      // React's onFocus/onBlur are focusin/focusout, so they fire for the body
+      // and dismiss buttons inside — tabbing to a toast holds it open.
+      onFocus={() => setHeld(true)}
+      onBlur={() => setHeld(false)}
     >
       <button type="button" className={styles.body} onClick={() => onOpen(notice.taskId)}>
         <span className={styles.glyph} style={{ color: presentation.color }} aria-hidden="true">

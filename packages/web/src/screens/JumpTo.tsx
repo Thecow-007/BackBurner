@@ -1,16 +1,29 @@
 /**
- * Jump-to — docs/ui-spec.md §3.13.
+ * Search — docs/ui-spec.md §3.13, ADR 0027.
  *
- * THERE IS NO TEXT-SEARCH ENDPOINT. This field is an exact handle-or-id lookup
- * and it says so in its own copy. It never prefix-matches, never scans error
- * text and never ranks by relevance, because promising any of that would be
- * promising a capability the API does not have (ui-spec §0).
+ * This field is a REAL partial search, because the API has one: `GET /tasks?q=`
+ * matches handle and id by equality **or prefix**, case-insensitively
+ * (api-contract §7). `q=scrape` lists every scrape; `q=scrape-1` lists
+ * `scrape-1`, `scrape-10`, `scrape-19`… It is still a jump-to as well — paste an
+ * id and open it.
  *
- * Matches are resolved against the tasks the store already holds. Handles
- * recycle, so one handle can name several tasks over time: every exact match is
- * listed, the current lease-holder first, then the most recent former holder —
- * the same precedence the API uses to resolve a handle (api-contract §5).
- * Navigation is always to `/task/{id}`.
+ * Two rules shape this file:
+ *
+ *  1. **The server ranks; this file does not re-rank.** The response is already
+ *     ordered: exact handle-or-id matches first, then tasks that still hold
+ *     their handle (queued/running, or ready/failed uncollected) ahead of
+ *     released former holders, then `created_at` descending. Sorting it again
+ *     client-side would throw away the ranking the request was made for. Tier
+ *     two exists because handles recycle — a live `report-1` and a released
+ *     former `report-1` both answer honestly, and the live one is the one the
+ *     caller meant (api-contract §5).
+ *  2. **Results never enter the store.** They are held in local state for as
+ *     long as the overlay is open and thrown away when it closes; merging them
+ *     would splice foreign rows into the register's list order and corrupt its
+ *     locally maintained counts (ADR 0027).
+ *
+ * Navigation is always to `/task/{id}`, never by handle: handles recycle, so a
+ * link built from one would quietly come to mean a different task later.
  */
 import {
   useCallback,
@@ -25,9 +38,10 @@ import {
 import { useNavigate } from "react-router-dom";
 
 import { StatusChip } from "../components/StatusChip.js";
+import { ApiError } from "../lib/api.js";
 import { formatRelative } from "../lib/format.js";
 import type { Task } from "../lib/types.js";
-import { useNow, useStore } from "../store/react.js";
+import { useActions, useNow, useStore } from "../store/react.js";
 import styles from "./JumpTo.module.css";
 
 /** `navigator.platform` is deprecated but it is still the only synchronous
@@ -40,16 +54,27 @@ function isMac(): boolean {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Long enough that a fast typist issues one request instead of eight, short
+ * enough that the list feels like it is keeping up. */
+const DEBOUNCE_MS = 150;
+
+/** api-contract §7: `q` is 1–64 characters after trimming. Anything longer is a
+ * 400, so it is trimmed here rather than sent and rejected. */
+const MAX_Q = 64;
+
 /**
  * Does this task still hold its handle? Queued and running tasks do; a finished
- * task holds it until it is collected; cancelled releases it. This is the
- * "active holder wins" half of handle resolution (api-contract §5).
+ * task holds it until it is collected; cancelled releases it. Used only by the
+ * degraded local fallback below — the server applies this same rule as tier two
+ * of its own ranking (api-contract §5, §7).
  */
 function holdsHandle(task: Task): boolean {
   if (task.status === "cancelled") return false;
   if (task.status === "ready" || task.status === "failed") return !task.collected;
   return true;
 }
+
+type Mode = "idle" | "loading" | "server" | "degraded";
 
 export interface JumpToProps {
   /** Lets the register's toolbar size the trigger. */
@@ -58,11 +83,17 @@ export interface JumpToProps {
 
 export function JumpTo({ className }: JumpToProps): ReactElement {
   const tasksById = useStore((state) => state.tasksById);
+  const { search } = useActions();
   const navigate = useNavigate();
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
+
+  // The answer to ONE search. Local state, never the store (ADR 0027).
+  const [results, setResults] = useState<Task[]>([]);
+  const [matching, setMatching] = useState<number | null>(null);
+  const [mode, setMode] = useState<Mode>("idle");
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -73,34 +104,91 @@ export function JumpTo({ className }: JumpToProps): ReactElement {
   // open, and only slowly — this is a clock, not a request (frontend-brief §5).
   const now = useNow(open, 30_000);
   const mac = useMemo(isMac, []);
-  const term = query.trim().toLowerCase();
+  const term = query.trim().slice(0, MAX_Q);
 
-  const matches = useMemo(() => {
-    if (term === "") return [];
-    const found: Task[] = [];
-    for (const task of tasksById.values()) {
-      // Exact equality on both sides, case-folded. Case folding is not prefix
-      // matching: `SCRAPE-1` and `scrape-1` are the same name, nothing else.
-      if (task.handle.toLowerCase() === term || task.id.toLowerCase() === term) found.push(task);
+  /** The degraded answer: an exact scan of the tasks the store happens to hold.
+   * Used only when the request itself failed, and always labelled as limited. */
+  const localMatches = useCallback(
+    (needle: string): Task[] => {
+      const folded = needle.toLowerCase();
+      const found: Task[] = [];
+      for (const task of tasksById.values()) {
+        if (task.handle.toLowerCase() === folded || task.id.toLowerCase() === folded) {
+          found.push(task);
+        }
+      }
+      found.sort((a, b) => {
+        const holdA = holdsHandle(a);
+        const holdB = holdsHandle(b);
+        if (holdA !== holdB) return holdA ? -1 : 1;
+        return a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0;
+      });
+      return found;
+    },
+    [tasksById]
+  );
+
+  // ── The search read (the fifth read moment, frontend-brief §5 rule 4) ──────
+  //
+  // Debounced, and the in-flight request is ABORTED the moment the term moves
+  // on — otherwise a slow early response could land after a fast later one and
+  // paint results for a term the user has already replaced.
+  useEffect(() => {
+    if (!open) return;
+    if (term === "") {
+      setResults([]);
+      setMatching(null);
+      setMode("idle");
+      return;
     }
-    found.sort((a, b) => {
-      const holdA = holdsHandle(a);
-      const holdB = holdsHandle(b);
-      if (holdA !== holdB) return holdA ? -1 : 1;
-      return a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0;
-    });
-    return found;
-  }, [tasksById, term]);
 
-  /** An id the store has not loaded is still a valid route: the detail screen
-   * resolves it and owns the 404. This is a jump, not a search result. */
-  const unloadedId = matches.length === 0 && UUID.test(term) ? term : null;
-  const optionCount = matches.length + (unloadedId !== null ? 1 : 0);
+    const controller = new AbortController();
+    let cancelled = false;
+    setMode("loading");
+
+    const timer = setTimeout(() => {
+      void search(term, controller.signal)
+        .then((res) => {
+          if (cancelled) return;
+          // Rendered in the SERVER'S order, verbatim. No client-side sort.
+          setResults(res.tasks);
+          setMatching(res.matching);
+          setMode("server");
+          setCursor(0);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          // An abort is this effect cleaning up after itself, not a failure.
+          if (err instanceof ApiError && err.code === "aborted") return;
+          setResults(localMatches(term));
+          setMatching(null);
+          setMode("degraded");
+          setCursor(0);
+        });
+    }, DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, term, search, localMatches]);
+
+  /** An id the search did not return is still a valid route: the detail screen
+   * resolves it and owns the 404. This is the jump half of the field. */
+  const unloadedId =
+    UUID.test(term) && !results.some((task) => task.id.toLowerCase() === term.toLowerCase())
+      ? term
+      : null;
+  const optionCount = results.length + (unloadedId !== null ? 1 : 0);
 
   const close = useCallback(() => {
     setOpen(false);
     setQuery("");
     setCursor(0);
+    setResults([]);
+    setMatching(null);
+    setMode("idle");
   }, []);
 
   const go = useCallback(
@@ -178,11 +266,15 @@ export function JumpTo({ className }: JumpToProps): ReactElement {
       setCursor((c) => (optionCount === 0 ? 0 : (c - 1 + optionCount) % optionCount));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      const target = matches[cursor];
+      const target = results[cursor];
       if (target) go(target.id);
       else if (unloadedId !== null) go(unloadedId);
     }
   }
+
+  // `counts.matching` is the WHOLE match set under `q`, not the page — which is
+  // what lets this line be honest without inferring anything (api-contract §6.2).
+  const truncated = matching !== null && matching > results.length;
 
   return (
     <>
@@ -195,7 +287,7 @@ export function JumpTo({ className }: JumpToProps): ReactElement {
         <span className={styles.glyph} aria-hidden="true">
           ⌕
         </span>
-        <span className={styles.placeholder}>jump to handle or id…</span>
+        <span className={styles.placeholder}>search handles or paste an id…</span>
         <span className={styles.kbd} aria-hidden="true">
           {mac ? "⌘K" : "Ctrl K"}
         </span>
@@ -216,7 +308,7 @@ export function JumpTo({ className }: JumpToProps): ReactElement {
             ref={overlayRef}
             role="dialog"
             aria-modal="true"
-            aria-label="Jump to a task"
+            aria-label="Search tasks"
           >
             <div className={styles.field}>
               <span className={styles.glyph} aria-hidden="true">
@@ -228,8 +320,9 @@ export function JumpTo({ className }: JumpToProps): ReactElement {
                 type="text"
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="jump to handle or id…"
-                aria-label="Jump to a handle or task id"
+                maxLength={MAX_Q}
+                placeholder="search handles or paste an id…"
+                aria-label="Search handles or paste a task id"
                 aria-describedby={hintId}
                 value={query}
                 onChange={(event) => {
@@ -238,25 +331,59 @@ export function JumpTo({ className }: JumpToProps): ReactElement {
                 }}
                 onKeyDown={onFieldKeyDown}
               />
+              {mode === "loading" ? (
+                <span className={styles.spinner} aria-hidden="true" />
+              ) : null}
             </div>
+
+            {/* The one line that says how many of how many, and where the
+                answer came from. Never a number the response did not carry. */}
+            {mode === "server" && truncated ? (
+              <p className={styles.status} role="status">
+                showing {results.length} of {matching} matches
+              </p>
+            ) : null}
+
+            {mode === "degraded" ? (
+              <p className={styles.statusDegraded} role="status">
+                Search is unavailable right now, so these are exact matches among the tasks
+                already loaded — not the whole register.
+              </p>
+            ) : null}
 
             <div className={styles.results}>
               {term === "" ? (
                 <p className={styles.empty}>
-                  Type a full handle (<span className={styles.mono}>scrape-1</span>) or a task id.
-                  This is an exact lookup — BackBurner has no text search.
+                  Search handles by prefix — <span className={styles.mono}>scrape</span> lists
+                  every scrape, <span className={styles.mono}>scrape-1</span> puts{" "}
+                  <span className={styles.mono}>scrape-1</span> first. Or paste a task id to
+                  open it.
                 </p>
               ) : null}
 
-              {term !== "" && optionCount === 0 ? (
+              {term !== "" && mode === "loading" && results.length === 0 ? (
+                <p className={styles.empty}>searching…</p>
+              ) : null}
+
+              {/* Two different "nothing found"s, because they mean different
+                  things: the server's answer is about the whole register, the
+                  degraded one is only about the rows already loaded. */}
+              {term !== "" && mode === "server" && optionCount === 0 ? (
+                <p className={styles.empty}>
+                  No task matches <span className={styles.mono}>{term}</span>. Matching is on
+                  handle and id — by whole value or by prefix — and never on error text.
+                </p>
+              ) : null}
+
+              {term !== "" && mode === "degraded" && optionCount === 0 ? (
                 <p className={styles.empty}>
                   No loaded task has the exact handle or id{" "}
-                  <span className={styles.mono}>{query.trim()}</span>. Exact matches only — this
-                  field does not search error text or match prefixes.
+                  <span className={styles.mono}>{term}</span>. There may be one in the register
+                  this browser has not loaded.
                 </p>
               ) : null}
 
-              {matches.map((task, index) => (
+              {results.map((task, index) => (
                 <button
                   key={task.id}
                   type="button"
@@ -280,13 +407,15 @@ export function JumpTo({ className }: JumpToProps): ReactElement {
               {unloadedId !== null ? (
                 <button
                   type="button"
-                  className={[styles.result, cursor === 0 ? styles.resultOn : null]
+                  className={[styles.result, cursor === results.length ? styles.resultOn : null]
                     .filter(Boolean)
                     .join(" ")}
                   onClick={() => go(unloadedId)}
                 >
                   <span className={styles.resultHandle}>open by id</span>
-                  <span className={styles.resultMeta}>not loaded here — the detail screen resolves it</span>
+                  <span className={styles.resultMeta}>
+                    not in these results — the detail screen resolves it
+                  </span>
                   <span className={styles.resultId}>{unloadedId}</span>
                 </button>
               ) : null}

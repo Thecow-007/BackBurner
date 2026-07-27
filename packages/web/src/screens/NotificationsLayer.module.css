@@ -24,7 +24,14 @@
 @media (max-width: 899px) {
   .toasts {
     top: auto;
-    bottom: var(--s-7);
+    /*
+     * Clear of the register's fixed action bar, which is a 44px-minimum ember
+     * button sitting 12px above the safe area. At 16px the toast covered all
+     * but ~4px of it, and that 4px sliver of ember read as a stray orange
+     * hairline under the notice rather than as the button it is. So: the bar's
+     * own inset, its height, the safe-area inset, and a real 12px gap.
+     */
+    bottom: calc(var(--s-5) + var(--tap) + var(--s-5) + env(safe-area-inset-bottom, 0px));
     left: var(--s-5);
     right: var(--s-5);
     width: auto;

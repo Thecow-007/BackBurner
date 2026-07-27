@@ -4,9 +4,9 @@
  * §7).
  *
  * Every control maps 1:1 to a `GET /tasks` query parameter: `status`, `lane`,
- * `from`, `to`, `sort`. Nothing is filtered client-side here — a change hands a
- * complete `TaskFilters` back to the register, which calls `setFilters()` and
- * takes a fresh server snapshot (frontend-brief §4.2).
+ * `from`, `to`, `sort`, `uncollected`. Nothing is filtered client-side here — a
+ * change hands a complete `TaskFilters` back to the register, which calls
+ * `setFilters()` and takes a fresh server snapshot (frontend-brief §4.2).
  *
  * The date range and the created ↔ updated switch are the two controls the
  * approved design does not draw; ui-spec §7 records why they exist. They are
@@ -36,6 +36,9 @@ export function countActiveFilters(filters: TaskFilters): number {
   if (filters.lane !== undefined) active += 1;
   if (filters.from !== undefined) active += 1;
   if (filters.to !== undefined) active += 1;
+  // `?uncollected=true` narrows the list exactly as the others do, so it counts
+  // toward the badge and toward "Clear filters" being offered at all.
+  if (filters.uncollected === true) active += 1;
   return active;
 }
 
@@ -48,6 +51,9 @@ export function describeFilters(filters: TaskFilters, counts: Counts | null): st
   const parts: string[] = [];
   if (filters.status !== undefined) parts.push(`status: ${filters.status}`);
   if (filters.lane !== undefined) parts.push(`lane: ${filters.lane}`);
+  // Stated in the API's own words, like every other line here — the operator
+  // undoing a filter mistake needs to see the parameter, not a paraphrase.
+  if (filters.uncollected === true) parts.push("uncollected: true");
   if (filters.from !== undefined) parts.push(`from: ${filters.from}`);
   if (filters.to !== undefined) parts.push(`to: ${filters.to}`);
   // `all` respects from/to and ignores status/lane — it is "how many tasks are
@@ -56,9 +62,21 @@ export function describeFilters(filters: TaskFilters, counts: Counts | null): st
   return parts.join(" · ");
 }
 
-/** Drop every filter, keep the ordering — clearing filters is not a re-sort. */
+/** Drop every filter — `uncollected` included — and keep the ordering only;
+ * clearing filters is not a re-sort. Built by allow-list rather than by
+ * deleting known keys, so a filter added later cannot survive a clear by
+ * being forgotten here. */
 export function clearedFilters(filters: TaskFilters): TaskFilters {
   return filters.sort !== undefined ? { sort: filters.sort } : {};
+}
+
+function withUncollected(filters: TaskFilters, on: boolean): TaskFilters {
+  const next: TaskFilters = { ...filters };
+  // Absent or the literal `true`; the API 400s on any other value, and "off" is
+  // expressed by omitting the parameter (api-contract §7).
+  if (on) next.uncollected = true;
+  else delete next.uncollected;
+  return next;
 }
 
 function withStatus(filters: TaskFilters, status: TaskStatus | null): TaskFilters {
@@ -128,9 +146,39 @@ interface StatusChipsProps extends FilterControlProps {
 function StatusChips({ filters, counts, onChange, size }: StatusChipsProps): ReactElement {
   const active = filters.status ?? null;
   const sizeClass = size === "compact" ? styles.chipCompact : styles.chipTouch;
+  const uncollected = filters.uncollected === true;
 
   return (
     <>
+      {/*
+        `to collect` leads, before `all`. It is the register's `?uncollected=`
+        filter — `status IN ('ready','failed') AND collected = false` — and its
+        number is `counts.uncollected`, the same predicate, so the chip and the
+        list it opens can never disagree.
+
+        It is NOT a status: no status glyph, the ready hue only on its number,
+        and its own border treatment. ui-spec §3.1's "there is no sixth status"
+        has to keep reading true (ADR 0022).
+      */}
+      <button
+        type="button"
+        className={[styles.filterChip, sizeClass, styles.collectChip, uncollected ? styles.chipOn : null]
+          .filter(Boolean)
+          .join(" ")}
+        aria-pressed={uncollected}
+        onClick={() => onChange(withUncollected(filters, !uncollected))}
+      >
+        to collect
+        {counts !== null ? (
+          <>
+            <span className={styles.chipSep} aria-hidden="true">
+              ·
+            </span>
+            <span className={styles.collectCount}>{counts.uncollected}</span>
+          </>
+        ) : null}
+      </button>
+
       <button
         type="button"
         className={[styles.filterChip, sizeClass, active === null ? styles.chipOn : null]
@@ -175,22 +223,12 @@ function StatusChips({ filters, counts, onChange, size }: StatusChipsProps): Rea
   );
 }
 
-/**
- * At one pane the status counts survive as a horizontally scrolling chip rail
- * above the list, with a right-edge fade so it reads as scrollable
- * (ui-spec §3.10). It is the mobile status filter as well as the count display
- * — which is why the mobile drawer omits status counts entirely (§3.14).
+/*
+ * The one-pane chip rail lives in `StatusRail.tsx`, not here. It binds to
+ * `useStatusFilter`/`useUncollectedFilter` from the sidebar directly, so the
+ * rail and the sidebar read the same models and cannot drift; a second rail
+ * built from `StatusChips` used to exist alongside it and was never rendered.
  */
-export function StatusChipRail(props: FilterControlProps): ReactElement {
-  return (
-    <div className={styles.rail}>
-      <div className={styles.railScroll} role="group" aria-label="Filter by status">
-        <StatusChips {...props} size="compact" />
-      </div>
-      <span className={styles.railFade} aria-hidden="true" />
-    </div>
-  );
-}
 
 // ── Lane / date / sort controls, shared by both layouts ─────────────────────
 
@@ -398,7 +436,7 @@ export function FilterSheet({
 
         <div className={styles.sheetBody}>
           <p className={styles.sectionLabel}>STATUS</p>
-          <div className={styles.chipWrap} role="group" aria-label="Filter by status">
+          <div className={styles.chipWrap} role="group" aria-label="Filter the register">
             <StatusChips {...controls} size="touch" />
           </div>
 

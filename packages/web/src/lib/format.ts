@@ -73,8 +73,70 @@ export function formatRelative(iso: string, now: number): string {
 export function formatClock(at: number | Date): string {
   const d = typeof at === "number" ? new Date(at) : at;
   if (Number.isNaN(d.getTime())) return "--:--:--";
-  const p = (n: number): string => String(n).padStart(2, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+/** English only (frontend-brief §12), and a fixed table rather than `Intl` so
+ * the same instant renders identically on every machine and in every test. */
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+/**
+ * A full instant in local wall clock: `26 Jul 2026 · 14:32:07`.
+ *
+ * This is the HUMAN reading of a timestamp — the one an operator can act on
+ * without doing arithmetic. It never replaces the exact instant: every surface
+ * that renders this also renders the API's ISO `Z` value beside it, because an
+ * operator correlating with a server log needs the UTC string verbatim
+ * (ui-spec §3.6, frontend-brief §4.4).
+ *
+ * Pure: it reads the string it is given and the machine's own zone, nothing
+ * else. Returns "" for input that is not a timestamp, so a caller renders
+ * nothing rather than `NaN`.
+ */
+export function formatAbsolute(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${pad2(d.getDate())} ${MONTHS[d.getMonth()]} ${d.getFullYear()} · ${formatClock(d)}`;
+}
+
+/**
+ * A transition timestamp for the timeline. Today's transitions read as a bare
+ * clock, exactly as the design draws them; anything older carries its date.
+ *
+ * `14:32:07` alone is only unambiguous for something that happened today, and
+ * the register is full of seeded history months old — a bare clock there is not
+ * a timestamp, it is a riddle. The year is added only when it differs, so the
+ * common case stays short.
+ */
+export function formatTimelineTime(iso: string, now: number): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "--:--:--";
+  const today = new Date(now);
+  const sameYear = d.getFullYear() === today.getFullYear();
+  const sameDay =
+    sameYear && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+  if (sameDay) return formatClock(d);
+  const date = sameYear
+    ? `${pad2(d.getDate())} ${MONTHS[d.getMonth()]}`
+    : `${pad2(d.getDate())} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  return `${date} · ${formatClock(d)}`;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
 }
 
 /**

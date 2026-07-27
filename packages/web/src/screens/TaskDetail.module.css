@@ -152,6 +152,54 @@
   word-break: break-all;
 }
 
+/*
+ * created / updated: two lines, human first.
+ *
+ * The raw ISO instant used to be the primary value and the relative time a dim
+ * supplement, which meant the most-read number on the panel was the one a
+ * person has to decode. Inverted — but the `Z` string is still here, verbatim
+ * and one line below, because it is what gets pasted into a log query.
+ */
+.stamp {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.stampHuman {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.stampInstant {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-quiet);
+}
+
+/* One click selects the whole instant — it is only ever copied whole. */
+.instant {
+  user-select: all;
+  word-break: break-all;
+}
+
+/* The same control as the id's copy button, with its furniture removed: this
+ * line is deliberately the quiet one and a second bordered button would drag it
+ * back up the hierarchy. */
+.copyQuiet {
+  min-height: 22px;
+  padding: 0 var(--s-1);
+  border-color: transparent;
+  color: var(--text-quiet);
+}
+
+.copyQuiet:hover {
+  color: var(--text);
+}
+
 .relative {
   color: var(--text-quiet);
 }

@@ -33,6 +33,11 @@ import styles from "./NotificationsLayer.module.css";
 /** Newest on top, the rest queue (frontend-brief §7.1). */
 const MAX_VISIBLE_TOASTS = 3;
 const READY_TOAST_MS = 6000;
+/** A failure gets two and a half times as long as a success and then clears
+ * itself; the notification centre below keeps it for the session either way
+ * (ADR 0023 — a departure from frontend-brief §7.1's "persists until
+ * dismissed", which that section now records). */
+const FAILED_TOAST_MS = 15_000;
 
 export interface NotificationsLayerProps {
   /** Whether the notification centre is open. The shell owns this state. */
@@ -67,9 +72,10 @@ function ToastStack({ onOpenTask }: { onOpenTask: (taskId: string) => void }): R
         <Toast
           key={notice.eventId}
           notice={notice}
-          // A failure persists until dismissed; a success clears itself. Passing
-          // 0 rather than omitting it keeps the intent explicit at the call site.
-          autoDismissMs={notice.kind === "ready" ? READY_TOAST_MS : 0}
+          // Both kinds clear themselves; the failure simply gets longer on
+          // screen. Stated at the call site rather than left to the component's
+          // default, so the two durations are visible in one place.
+          autoDismissMs={notice.kind === "ready" ? READY_TOAST_MS : FAILED_TOAST_MS}
           onOpen={(taskId) => {
             markShown(notice.eventId);
             onOpenTask(taskId);

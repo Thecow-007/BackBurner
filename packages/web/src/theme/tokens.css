@@ -63,6 +63,20 @@
   --chip-running-bg: #58a6ff;
   --chip-running-text: #06131f;
 
+  /*
+   * ── Lease state ──────────────────────────────────────────────────────────
+   * `collected` is NOT a status and never becomes one (ui-spec §3.1: "there is
+   * no sixth status"). It is the handle-lease flag, so it takes a hue that is
+   * deliberately outside the five status colours AND outside ember — reusing
+   * either would make an operator acknowledgement look like something the
+   * engine announced, and ember is never a status (ui-spec §1.1). Muted violet,
+   * in the status-chip recipe, sitting BESIDE an untouched status chip.
+   * See ADR 0024.
+   */
+  --collected: #a68cd6;
+  --chip-collected-bg: #a68cd616;
+  --chip-collected-border: #a68cd63d;
+
   /* Timeline node halo: S at 22 alpha. */
   --halo-queued: #9a8b8022;
   --halo-running: #58a6ff22;

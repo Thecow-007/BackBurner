@@ -105,6 +105,7 @@ export function useActions(): StoreActions {
       retry: s.retry,
       collect: s.collect,
       loadDetail: s.loadDetail,
+      search: s.search,
       markNotificationsRead: s.markNotificationsRead,
       clearNotifications: s.clearNotifications,
       dismissActionError: s.dismissActionError,

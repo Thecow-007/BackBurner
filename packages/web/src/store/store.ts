@@ -8,8 +8,9 @@
  *  2. Subscribe to `/events?since=<as_of>` — gap-free, no overlap.
  *  3. The store mutates ONLY on SSE events. REST responses to actions are
  *     acknowledgements, never merged as truth; the confirming event is.
- *  4. Zero polling. Reads happen at four moments only: hydration, filter/
- *     pagination changes, detail mount, and the single event-driven backfill.
+ *  4. Zero polling. Reads happen at five moments only: hydration, filter/
+ *     pagination changes, detail mount, the single event-driven backfill, and
+ *     the search overlay's user-driven lookup (ADR 0027). None is on a timer.
  *  5. Actions are requests, events are facts: a pressed control stays pending
  *     until its confirming event arrives (§6.4).
  *
@@ -20,7 +21,7 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { ApiClient, ApiError } from "../lib/api.js";
-import { matchesFilters, parseSort, sortIds } from "../lib/filters.js";
+import { isUncollected, matchesFilters, parseSort, sortIds } from "../lib/filters.js";
 import { SseClient } from "../lib/sse.js";
 import { clearStoredKey, getStoredKey, setStoredKey } from "../lib/storage.js";
 import type {
@@ -40,6 +41,16 @@ const PENDING_TIMEOUT_MS = 10_000; // §6.4: no confirming event in 10s → resy
 
 export type AuthStatus = "unauthenticated" | "validating" | "authenticated" | "error";
 export type ListStatus = "idle" | "loading" | "live" | "error";
+
+/**
+ * One search read's answer (ADR 0027). `tasks` is the server's page IN THE
+ * SERVER'S RANK ORDER — the caller renders it verbatim. `matching` is the true
+ * total across all matches, so an overlay showing 20 of them can say so.
+ */
+export interface SearchResult {
+  tasks: Task[];
+  matching: number | null;
+}
 
 /** A transient error from a failed mutating action, for the UI to toast (§4.4). */
 export interface ActionError {
@@ -109,6 +120,20 @@ export interface StoreActions {
   /** Detail mount: fetch the task + its history (§4.4). Merges into the store
    * so live events keep updating it; rejects with ApiError on 404/400. */
   loadDetail(id: string): Promise<{ task: Task; history: HistoryTransition[] }>;
+
+  /**
+   * `GET /tasks?q=` for the search overlay — the fifth read moment (§5 rule 4,
+   * ADR 0027). User-driven, exactly like a filter change; never on a timer.
+   *
+   * It deliberately writes NOTHING: not `tasksById`, not `listOrder`, not
+   * `counts`, not `historyById`. Search results are a different question from
+   * the register's question — merging them would splice foreign rows into the
+   * register's server-given list order and corrupt the locally maintained
+   * counters, whose bases are the register's filters and not the search term.
+   * The overlay holds the answer in local component state and throws it away
+   * when it closes.
+   */
+  search(term: string, signal?: AbortSignal): Promise<SearchResult>;
 
   markNotificationsRead(): void;
   clearNotifications(): void;
@@ -574,6 +599,15 @@ export function createBackburnerStore(baseUrl = ""): StoreApi<BackburnerStore> {
       return { task, history: history.transitions };
     }
 
+    async function search(term: string, signal?: AbortSignal): Promise<SearchResult> {
+      if (!api) throw new ApiError({ status: 401, code: "unauthorized", message: "Not signed in." });
+      const res = await api.searchTasks(term, { signal });
+      // There is deliberately no `set(...)` in this function. See the interface
+      // doc above: search answers a different question from the register's, and
+      // its rows must not become register rows.
+      return { tasks: res.tasks, matching: res.counts?.matching ?? null };
+    }
+
     return {
       ...initialState(),
 
@@ -622,6 +656,7 @@ export function createBackburnerStore(baseUrl = ""): StoreApi<BackburnerStore> {
       collect: (id: string) => runAction(id, "collect"),
 
       loadDetail,
+      search,
 
       markNotificationsRead: () =>
         set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })) })),
@@ -653,11 +688,6 @@ function subsetFilters(filters: TaskFilters, keys: Array<keyof TaskFilters>): Ta
   return out;
 }
 
-/** ready|failed and not yet collected — the register header's "N to collect". */
-function isUncollected(task: Task): boolean {
-  return (task.status === "ready" || task.status === "failed") && !task.collected;
-}
-
 function bump(target: Record<string, number>, key: string, delta: number): void {
   target[key] = Math.max(0, (target[key] ?? 0) + delta);
 }
@@ -677,9 +707,15 @@ export function adjustCounts(
   if (!counts) return counts;
   if (!prev && !next) return counts;
 
+  // The five bases of api-contract §6.2, as amended for `?uncollected=`. The
+  // uncollected FILTER is scope for `matching`, `status.*` and `lane.*`; it is
+  // NOT scope for `all`, and it is deliberately not scope for the `uncollected`
+  // COUNT, which *is* that predicate — narrowing it by itself would make the
+  // badge collapse to itself the instant a user pressed it.
   const dateOnly = subsetFilters(filters, ["from", "to"]);
-  const laneDate = subsetFilters(filters, ["lane", "from", "to"]);
-  const statusDate = subsetFilters(filters, ["status", "from", "to"]);
+  const laneDateOnly = subsetFilters(filters, ["lane", "from", "to"]);
+  const laneDate = subsetFilters(filters, ["lane", "from", "to", "uncollected"]);
+  const statusDate = subsetFilters(filters, ["status", "from", "to", "uncollected"]);
 
   const out: Counts = {
     ...counts,
@@ -691,19 +727,21 @@ export function adjustCounts(
   if (prev && matchesFilters(prev, dateOnly)) out.all = Math.max(0, out.all - 1);
   if (next && matchesFilters(next, dateOnly)) out.all += 1;
 
-  // `status.*` — respects lane/from/to, ignores the status filter.
+  // `status.*` — respects lane/from/to/uncollected, ignores the status filter.
   if (prev && matchesFilters(prev, laneDate)) bump(out.status, prev.status, -1);
   if (next && matchesFilters(next, laneDate)) bump(out.status, next.status, +1);
 
-  // `lane.*` — respects status/from/to, ignores the lane filter.
+  // `lane.*` — respects status/from/to/uncollected, ignores the lane filter.
   if (prev && matchesFilters(prev, statusDate)) bump(out.lane, prev.lane, -1);
   if (next && matchesFilters(next, statusDate)) bump(out.lane, next.lane, +1);
 
-  // `uncollected` — same basis as `status.*`.
-  if (prev && isUncollected(prev) && matchesFilters(prev, laneDate)) {
+  // `uncollected` the count — lane/from/to only. It ignores `status` for the
+  // same reason `status.*` does, and it ignores `uncollected` because it is the
+  // number that opens that filter.
+  if (prev && isUncollected(prev) && matchesFilters(prev, laneDateOnly)) {
     out.uncollected = Math.max(0, out.uncollected - 1);
   }
-  if (next && isUncollected(next) && matchesFilters(next, laneDate)) {
+  if (next && isUncollected(next) && matchesFilters(next, laneDateOnly)) {
     out.uncollected += 1;
   }
 

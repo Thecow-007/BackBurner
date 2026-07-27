@@ -25,11 +25,26 @@ export function parseSort(sort: string | undefined): ParsedSort {
   return { field: match[1] as SortField, dir: (match[2] as SortDir | undefined) ?? "desc" };
 }
 
+/**
+ * `status IN ('ready','failed') AND collected = false` — the EXACT predicate
+ * behind both `?uncollected=true` and `counts.uncollected` (api-contract §7).
+ * It is written once and read by the filter mirror below and by `adjustCounts`,
+ * for the same reason the engine parses it once in its own `filters.ts`: a
+ * count that disagrees with the list it opens is the specific bug ui-spec §3.10
+ * names.
+ */
+export function isUncollected(task: Task): boolean {
+  return (task.status === "ready" || task.status === "failed") && !task.collected;
+}
+
 /** Does a task belong in the list for these filters? `from` is inclusive and
  * `to` exclusive on `created_at`, matching the server (api-contract §7). */
 export function matchesFilters(task: Task, filters: TaskFilters): boolean {
   if (filters.status !== undefined && task.status !== filters.status) return false;
   if (filters.lane !== undefined && task.lane !== filters.lane) return false;
+  // Mirrors the server predicate exactly, so a task leaving the uncollected set
+  // disappears from the live list the moment its `collected` event lands.
+  if (filters.uncollected === true && !isUncollected(task)) return false;
   if (filters.from !== undefined) {
     const from = Date.parse(filters.from);
     if (!Number.isNaN(from) && Date.parse(task.created_at) < from) return false;

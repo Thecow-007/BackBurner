@@ -1,11 +1,12 @@
 /**
  * The DESKTOP register row (docs/ui-spec.md §2, §3.4).
  *
- * The row is a seven-track grid whose columns are declared once, on the
- * register, as `--register-tracks` — the header and every row read the same
- * custom property, so "header and rows share identical tracks and gap"
- * (ui-spec §2) is enforced by construction rather than by two lists that can
- * drift apart.
+ * The row is a grid whose columns are declared once, on the register, as
+ * `--register-tracks` — the header and every row read the same custom property,
+ * so "header and rows share identical tracks and gap" (ui-spec §2) is enforced
+ * by construction rather than by two lists that can drift apart. How many
+ * tracks there are depends on how wide the register PANE is, not on how wide
+ * the window is (ui-spec §2, ADR 0024); this file never asks.
  *
  * Navigation is by IMMUTABLE ID: the row links to `/task/{task.id}`, never to
  * `/task/{handle}`. Handles recycle, so a link keyed by handle would silently
@@ -167,9 +168,17 @@ export function TaskRow({ task, selected, now, onAction }: TaskRowProps): ReactE
         {formatRelative(task.created_at, now)}
       </span>
 
-      <span className={styles.noteCell} title={full}>
-        {task.collected ? <CollectedMarker /> : null}
-        <span className={failed ? styles.noteError : styles.note}>{firstLine}</span>
+      {/* The collected chip is a child of this cell but not always drawn inside
+       * it: where the register is wide enough the cell becomes `display:
+       * contents` and the chip takes its own COLLECTED column, leaving the note
+       * text as the last cell. One element, two possible columns, no duplicated
+       * markup (ui-spec §2, §3.2). The tooltip therefore belongs to the text
+       * span rather than to the wrapper, which has no box in that mode. */}
+      <span className={styles.noteCell}>
+        {task.collected ? <CollectedMarker className={styles.collectedCell} /> : null}
+        <span className={failed ? styles.noteError : styles.note} title={full}>
+          {firstLine}
+        </span>
       </span>
 
       {/* No ACTION column at three panes — the detail pane is always present

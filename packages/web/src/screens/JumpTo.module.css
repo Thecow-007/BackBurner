@@ -1,7 +1,8 @@
 /*
- * Jump-to — ui-spec §3.13. The trigger mirrors the design's register search
- * field; the overlay keeps the familiar command-palette shape while the copy
- * inside it is careful never to imply a search the API cannot perform.
+ * Search — ui-spec §3.13. The trigger mirrors the design's register search
+ * field; the overlay keeps the familiar command-palette shape. The copy claims
+ * exactly what `GET /tasks?q=` does — prefix matching on handle and id, ranked
+ * by the server — and nothing beyond it (ADR 0027).
  *
  * Colours are var(--token) only; theme/tokens.css is the sole file in the SPA
  * where a literal may appear.
@@ -111,6 +112,47 @@
 
 .input::placeholder {
   color: var(--text-quiet);
+}
+
+/* Reuses the register's 10px spinning ring; `global()` is load-bearing, because
+ * CSS Modules would scope a bare animation name into one that matches no
+ * keyframe and silently never runs. `bb-spin` lives in theme/global.css, which
+ * also disables it under prefers-reduced-motion (ui-spec §1.3). */
+.spinner {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border: 1px solid var(--line-strong);
+  border-top-color: var(--text-dim);
+  border-radius: 50%;
+  animation: global(bb-spin) 1s linear infinite;
+}
+
+/* `showing N of M matches` — M is the server's `counts.matching`, the whole
+ * match set. The line is absent rather than approximate when M is unknown. */
+.status {
+  margin: 0;
+  padding: var(--s-3) var(--s-6);
+  border-bottom: 1px solid var(--line-quiet);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-quiet);
+}
+
+/* Degraded, not silent: the request failed and the results are a local scan.
+ * It takes the degraded-connection treatment because it is the same admission —
+ * what you are looking at may not be the whole truth. */
+.statusDegraded {
+  margin: 0;
+  padding: var(--s-4) var(--s-6);
+  border-bottom: 1px solid var(--conn-reconnecting-border);
+  background: var(--conn-reconnecting-bg);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ember);
+  text-wrap: pretty;
 }
 
 .results {
