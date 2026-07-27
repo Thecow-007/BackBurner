@@ -1,5 +1,14 @@
 # Orchestration Brief — Phase 5 (Web SPA) + Phase 6 prep
 
+> **⚠️ Historical — Phase 5 is complete.** This playbook was written *before* the web build and
+> describes it in the future tense; everything its "What is missing" section lists below now
+> exists, including the `counts` endpoint, the store's React binding, all four screens, and the
+> dev/production serving paths. It is kept for the record of how the build was driven, not as a
+> description of the current tree. For what the SPA actually does, read
+> [`frontend-brief.md`](./frontend-brief.md) and [`ui-spec.md`](./ui-spec.md); for what remains,
+> read [`build-plan.md`](./build-plan.md) Phases 6–7. The Dockerfile, deploy workflow and
+> Codespaces re-verification it mentions as a parallel track are still outstanding.
+>
 > **Status of this document.** A working playbook for a multi-agent build, not normative law. The
 > design authority remains [`frontend-brief.md`](./frontend-brief.md) §§2–10, the assessment spec,
 > and the final design page Daniel provides. Where this brief and those disagree, they win. This

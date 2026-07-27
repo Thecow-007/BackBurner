@@ -74,13 +74,18 @@ All runtime configuration is by environment variable (`.env.example` is the temp
 | `DRAIN_TIMEOUT_MS` | `30000` | Bound on the graceful-drain window in `stop({ drain })` before remaining workers are aborted |
 | `NODE_ENV` | — | Standard Node environment flag |
 
-**Worker pool and mock worker.** `WORKER_CONCURRENCY` caps how many workers run at once, enforced by `FOR UPDATE SKIP LOCKED` claims. Two lanes are registered out of the box — `scrape` and `report` — both backed by a mock worker driven entirely by `params`:
+**Worker pool and mock worker.** `WORKER_CONCURRENCY` caps how many workers run at once, enforced by `FOR UPDATE SKIP LOCKED` claims. Five lanes are registered out of the box — `scrape`, `report`, `convert`, `build`, `test` — all backed by the same mock worker, driven entirely by `params`:
 
-- `duration_ms` (integer, 1–600000) — how long the job sleeps. Omitted: a random duration between 3000–15000 ms is chosen once at submit and written back into the stored `params`, so retries reuse the same value deterministically.
+- `duration_ms` (integer, 1–600000) — how long the job sleeps. Omitted: a random duration from **the lane's own range** is chosen once at submit and written back into the stored `params`, so retries reuse the same value deterministically. The range is 3000–15000 ms everywhere except `build`, the deliberately long-running lane, which draws 20000–90000 ms. Clients read the ranges from `counts.lane_defaults` on `GET /tasks` rather than hard-coding them.
 - `fail: true` — returns a **retryable** failure.
-- `fail_permanent: true` — returns a **non-retryable** failure (straight to `failed`, attempt budget ignored; wins if both flags are set). Operator retry remains available afterward regardless of `retryable`.
+- `fail_permanent: true` — returns a **non-retryable** failure (straight to `failed`, attempt budget ignored). Operator retry remains available afterward regardless of `retryable`.
+- `fail_times: n` (integer, 1–9) — returns a retryable failure while the current attempt is `≤ n`, then succeeds: the flaky-then-recovers path, end to end. Set `max_attempts` above `n` or the task exhausts its budget and lands in `failed` instead.
 
-Extra `params` keys pass through to the worker untouched.
+Precedence when more than one is set: `fail_permanent` > `fail` > `fail_times`. **With no outcome param a job always succeeds** — the engine's default outcome is deterministic, never a server-side dice roll, which is what keeps the nine criteria tests reproducible. The dashboard's "Random" submit option rolls its dice in the browser and sends explicit params, so a task's stored `params` always state exactly what it will do ([ADR 0028](./docs/decisions/0028-random-submit-outcomes-rolled-client-side.md)).
+
+Lane registration order is contract: it is what `counts.lanes` reports, and therefore the order the dashboard's sidebar and submit picker render. Extra `params` keys pass through to the worker untouched.
+
+The worker contract itself is `(job, ctx) => Promise<WorkerResult>`, where `ctx` is `{ signal, attempt, maxAttempts }` — `signal` is what makes cancellation actually stop a running worker, and `attempt`/`maxAttempts` are the values the claim journaled onto that attempt's `running` transition. A spec-shaped one-argument worker stays assignable; see [`docs/architecture.md`](./docs/architecture.md) and [ADR 0021](./docs/decisions/0021-flaky-outcomes-attempt-context-and-per-lane-durations.md).
 
 ## API surface
 
@@ -98,6 +103,20 @@ Full normative contract: [`docs/api-contract.md`](./docs/api-contract.md). Summa
 | GET | `/tasks/id/{id}/history` | Bearer | **[EXTENSION]** Full state-transition history of a task |
 | GET | `/events` | Bearer or `?api_key=` | **[SPEC]** SSE stream of lifecycle events |
 | GET | `/health` | none | **[EXTENSION]** Liveness probe |
+
+**Listing parameters** on `GET /tasks` (all combine freely; invalid values are rejected with `400 invalid_params`, never silently ignored):
+
+| Parameter | Badge | Values | Meaning |
+|---|---|---|---|
+| `status` | **[SPEC]** | one of the five statuses | Exact match |
+| `lane` | **[SPEC]** | string | Exact match |
+| `uncollected` | **[EXTENSION]** | literal `true` | `status IN ('ready','failed') AND collected = false` — finished work still awaiting an operator. Uses the same SQL predicate as `counts.uncollected`, so the filter and the number that opens it can never disagree |
+| `q` | **[EXTENSION]** | 1–64 chars | Case-insensitive lookup over handle and id, by equality **or prefix**. Rank-ordered (exact match → still holds its handle → newest first), so `q=scrape-1` returns `scrape-1` before `scrape-10`. Unpaginated: `next_cursor` is always `null`, and combining it with `sort` or `cursor` is a `400` |
+| `from` / `to` | **[EXTENSION]** | ISO-8601 | `created_at >= from`, `created_at < to` |
+| `sort` | **[EXTENSION]** | `created_at` \| `updated_at`, optional `:asc`/`:desc` | Default `created_at:desc` |
+| `limit` / `cursor` | **[EXTENSION]** | 1–200 / opaque | Keyset pagination; default page 50 |
+
+Every `200` from `GET /tasks` also carries an additive `counts` object — `all`, `matching`, `uncollected`, per-`status`, per-`lane`, the engine's registered `lanes`, and `lane_defaults`. Each field has its **own filter basis** (documented in [`docs/api-contract.md`](./docs/api-contract.md) §6.2) so that every number in the dashboard matches the list it opens. The counts ride on the list response rather than a separate route precisely so the two can never disagree ([ADR 0018](./docs/decisions/0018-task-counts-on-list-response.md)).
 
 **Auth.** Every endpoint except `GET /health` requires `Authorization: Bearer <api key>`. Keys have the form `bb_` + 40 lowercase hex characters; only their SHA-256 hash is stored server-side, and raw keys are printed exactly once, by `npm run seed`. `GET /events` additionally accepts the key as `?api_key=<key>`, since a browser `EventSource` can't set headers — if both are supplied, the header wins.
 
@@ -129,7 +148,17 @@ npm run seed -- --tasks 300 --from 2026-04-01 --to 2026-07-21
 npm run seed -- --reset
 ```
 
-`--tasks` (default 300), `--from`/`--to` (default: `to` = now, `from` = 90 days earlier) generate backdated tasks with coherent synthetic transition histories, spread across every terminal status (`ready`, `failed`, `cancelled`) — deliberately **no** seeded `queued` or `running` rows, since those would be falsified the moment the server restarts and boot recovery runs. Every seeded row carries `seeded: true`. Handles are allocated through the real allocator, so seeded data can never violate the one-active-handle invariant, and it coexists safely with real submissions. Two users are seeded, `daniel` and `reviewer`; their raw API keys (`bb_` + 40 hex) are printed **once**, to stdout, and never recoverable afterward. `--reset` deletes seeded tasks/transitions only and upserts (never deletes) the seed users.
+`--tasks` (default 300), `--from`/`--to` (default: `to` = now, `from` = 90 days earlier) generate backdated tasks with coherent synthetic transition histories, spread across every terminal status (`ready`, `failed`, `cancelled`) — deliberately **no** seeded `queued` or `running` rows, since those would be falsified the moment the server restarts and boot recovery runs. Every seeded row carries `seeded: true`. Handles are allocated through the real allocator, so seeded data can never violate the one-active-handle invariant, and it coexists safely with real submissions.
+
+Three users are provisioned, and their raw API keys (`bb_` + 40 hex) are printed **once**, to stdout, and are not recoverable afterward:
+
+| User | Tasks | Why |
+|---|---|---|
+| `daniel` | half the corpus | The everyday account |
+| `reviewer` | half the corpus | Proves per-user scoping — handles, lists, and the event stream are all isolated |
+| `newcomer` | **none, deliberately** | Demonstrates every empty state on demand: empty register, zero counts, empty notification centre, and a lane picker that still works because `counts.lanes` is engine registration rather than a `SELECT DISTINCT` over data |
+
+`--reset` deletes seeded tasks/transitions only, and ensures all three users exist **without rotating their keys** — so a key a reviewer is already holding survives a reset. A full seed run does rotate them.
 
 ## Running the tests
 
@@ -141,7 +170,7 @@ npm run test:supplemental          # contract-defense e2e suites
 npm run test:e2e -- criterion-09   # a single criterion
 ```
 
-Requires the same Docker Postgres 18 as local setup; the e2e and engine test suites each create and migrate their own dedicated test database automatically (`backburner_test_e2e`, `backburner_test_engine`) — they never touch dev data. Test timing knobs (`BACKOFF_BASE_MS=100`, `WORKER_CONCURRENCY`, `DRAIN_TIMEOUT_MS`) are set by the harness itself; see [`docs/test-plan.md`](./docs/test-plan.md) §3.4. The criteria suite is the executable form of the assessment's nine success criteria; the supplemental suites defend the rest of the contract (auth isolation, the invalid-transition matrix, the allocator under concurrent load, SSE replay, pagination, seed smoke, and more) — full inventory in [`docs/test-plan.md`](./docs/test-plan.md) §2.
+Requires the same Docker Postgres 18 as local setup; the e2e and engine test suites each create and migrate their own dedicated test database automatically (`backburner_test_e2e`, `backburner_test_engine`) — they never touch dev data. Test timing knobs (`BACKOFF_BASE_MS=100`, `WORKER_CONCURRENCY`, `DRAIN_TIMEOUT_MS`) are set by the harness itself; see [`docs/test-plan.md`](./docs/test-plan.md) §3.4. The criteria suite is the executable form of the assessment's nine success criteria; the 14 supplemental suites defend the rest of the contract (auth isolation, the invalid-transition matrix, the allocator under concurrent load, SSE replay, pagination, count coherence, the lane registry, flaky outcomes, search matching and ranking, seed smoke, and more) — full inventory in [`docs/test-plan.md`](./docs/test-plan.md) §2.
 
 ## GitHub Codespaces
 
@@ -149,9 +178,11 @@ The devcontainer (`.devcontainer/devcontainer.json`) reuses the same `docker-com
 
 ## Project status
 
-**Complete and green:** the engine (`@backburner/engine`), the full HTTP + SSE API (`@backburner/api`), seeding, and the automated test matrix — the 9 criteria tests, 11 supplemental contract-defense suites, and the engine unit suites.
+**Complete and green:** the engine (`@backburner/engine`), the full HTTP + SSE API (`@backburner/api`), seeding, and the automated test matrix — the 9 criteria tests, 14 supplemental contract-defense suites, and the engine unit suites.
 
 **The React dashboard (`@backburner/web`)** is built: the API-key gate, the task register, task detail, submit, and the notification layer, against the behavioural spec in [`docs/frontend-brief.md`](./docs/frontend-brief.md) and the visual spec in [`docs/ui-spec.md`](./docs/ui-spec.md). In development `npm run dev` runs the API and the Vite dev server together, with `/tasks`, `/events` and `/health` proxied through; in production the API process serves the built SPA itself.
+
+The register is a live, resizable three-pane operations view: server-ranked prefix search over handles and ids, a one-press "needs collection" filter whose count always matches the list it opens, per-status and per-lane totals sourced entirely from the server, an attempt-grouped transition timeline, and a submit form that defaults to a random outcome so the register behaves like a system under real load. Every number on screen comes from the API — nothing is inferred from the loaded page ([`docs/frontend-brief.md`](./docs/frontend-brief.md) §6.5).
 
 **Not yet built:** there is no deployed URL. Production topology is designed in [`docs/deployment.md`](./docs/deployment.md), and the container image and deploy pipeline are the remaining milestone.
 
@@ -162,7 +193,8 @@ The devcontainer (`.devcontainer/devcontainer.json`) reuses the same `docker-com
 | [`docs/architecture.md`](./docs/architecture.md) | Engine and system design: schema, handle allocation, state machine, dispatch, cancellation, recovery |
 | [`docs/api-contract.md`](./docs/api-contract.md) | The full HTTP surface: endpoints, task object, error envelope, SSE wire format, spec-ambiguity resolutions |
 | [`docs/test-plan.md`](./docs/test-plan.md) | All test suites, timing constants, CI, flakiness policy |
-| [`docs/frontend-brief.md`](./docs/frontend-brief.md) | The SPA: screens, store discipline, action matrix |
+| [`docs/frontend-brief.md`](./docs/frontend-brief.md) | The SPA's **behaviour**: screens, routes, store discipline, action matrix, notifications |
+| [`docs/ui-spec.md`](./docs/ui-spec.md) | The SPA's **appearance**: tokens, components, layout grids, copy register, the mark |
 | [`docs/build-plan.md`](./docs/build-plan.md) | Build phases, gates, working agreements |
 | [`docs/deployment.md`](./docs/deployment.md) | Production topology, deploy pipeline, Cloudflare, secrets |
 | [`docs/decisions/`](./docs/decisions/) | ADRs — the rationale behind every hard-to-reverse choice |
