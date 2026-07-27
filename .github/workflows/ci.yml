@@ -82,6 +82,13 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # Lifted to job level so the rollout steps can test for their own
+    # preconditions: the `secrets` context is not available in a step-level
+    # `if`, but `env` is.
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
     steps:
       - uses: actions/checkout@v4
 
@@ -114,7 +121,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Everything below is the rollout, and it is skipped wholesale until
+      # DEPLOY_HOST exists. Publishing the image is the expensive, always-
+      # useful half; delivery is the half that needs credentials. Splitting
+      # them here means a repository with no deploy secrets still produces a
+      # pullable image and a green run — which is exactly the state during
+      # initial bring-up, and after a server move.
+      - name: Report rollout status
+        if: env.DEPLOY_HOST == ''
+        run: |
+          echo "::notice::DEPLOY_HOST is not set — image published to GHCR, rollout skipped."
+          echo "Set DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS and DEPLOY_DIR to enable automatic delivery."
+
       - name: Configure SSH
+        if: env.DEPLOY_HOST != ''
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -132,19 +152,14 @@ jobs:
       # "the deployed commit equals main HEAD" covers the topology too, not
       # just the image (docs/deployment.md §3).
       - name: Ship the compose file
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+        if: env.DEPLOY_HOST != ''
         run: |
           scp -i ~/.ssh/id_deploy docker-compose.yml \
             "$DEPLOY_USER@$DEPLOY_HOST:${DEPLOY_DIR:-/opt/backburner}/docker-compose.yml"
 
       - name: Roll out
+        if: env.DEPLOY_HOST != ''
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
           IMAGE: ${{ steps.img.outputs.name }}:${{ github.sha }}
         run: |
           ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
@@ -158,10 +173,7 @@ jobs:
       # go red here rather than be discovered on camera. The app's own
       # healthcheck already polls /health; this waits on that verdict.
       - name: Verify the rollout is healthy
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+        if: env.DEPLOY_HOST != ''
         run: |
           ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd ${DEPLOY_DIR:-/opt/backburner} && bash -s" <<'REMOTE'
