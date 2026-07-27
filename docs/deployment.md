@@ -30,17 +30,19 @@ flowchart LR
   push["push to main"] --> ci["CI: typecheck, build, unit + e2e"]
   ci -->|green| build["build app image"]
   build --> ghcr["push to GHCR"]
-  ghcr --> ssh["SSH to server"]
-  ssh --> up["docker compose pull && up -d"]
+  ghcr --> runner["self-hosted runner on the server"]
+  runner --> up["docker compose pull && up -d"]
   up --> verify["wait for container health"]
 ```
 
-- **Trigger:** GitHub Actions on push to `main`, gated on CI green — the `deploy` job `needs: [test, criteria]` and never runs on a red build. It lives in `ci.yml` alongside them so the gate is a job dependency rather than a cross-workflow guess.
-- **Build and publish:** the workflow builds the app image and pushes it to GHCR under two tags — the immutable `:<sha>` the server is told to run, and the moving `:main` tag `docker-compose.yml` falls back to for manual operations on the box.
-- **Roll out:** the workflow connects over SSH — host, user, key, and pinned host key held in repository secrets — copies `main`'s `docker-compose.yml` to the deploy directory, then runs `docker compose pull && docker compose --profile prod up -d` with `APP_IMAGE` pinned to the SHA it just built. The entrypoint applies migrations on start (§2), so schema changes ship in the same motion as code.
-- **Verify:** the workflow then waits on the app container's healthcheck and fails the deploy — dumping container logs — if it never reaches `healthy`. A rollout that leaves the app down goes red in Actions rather than being discovered on camera.
-- **Serialization:** the `deploy` job takes its own concurrency group with `cancel-in-progress: false`. The workflow-level group cancels superseded CI runs, which is right for tests and wrong for a deploy — cancelling between `pull` and `up -d` would leave the server holding an image it never started.
-- **Host key pinning:** the SSH step writes a known-hosts entry from a secret rather than using `StrictHostKeyChecking=no`. This step hands shell access to the server; accepting any host key would hand it to anything that can answer on that address.
+Delivery is **pull-based**: the server reaches out, and nothing reaches in. The deploy host is IPv6-native with a dynamic residential IPv4, and GitHub-hosted runners are IPv4-only, so the SSH push this section originally specified cannot work — see [ADR 0030](./decisions/0030-self-hosted-runner-rollout.md).
+
+- **Trigger:** GitHub Actions on push to `main`, gated on CI green — both deploy jobs depend on `[test, criteria]` and never run on a red build. They live in `ci.yml` alongside the suites so the gate is a job dependency rather than a cross-workflow guess.
+- **Build and publish (`publish`, cloud runner):** builds the app image and pushes it to GHCR under two tags — the immutable `:<sha>` the server is told to run, and the moving `:main` tag `docker-compose.yml` falls back to for manual operations on the box. Building in the cloud keeps the toolchain, build load, and disk churn off a machine that also serves other sites.
+- **Roll out (`rollout`, self-hosted runner):** authenticates to GHCR with the job's own `GITHUB_TOKEN`, syncs `main`'s `docker-compose.yml` into the deploy directory, then runs `docker compose pull && docker compose --profile prod up -d` with `APP_IMAGE` pinned to the SHA just built. The entrypoint applies migrations on start (§2), so schema changes ship in the same motion as code. Credentials are dropped in an `always()` step so they do not outlive the job.
+- **Verify:** the rollout waits on the app container's healthcheck and fails — dumping container logs — if it never reaches `healthy`. A rollout that leaves the app down goes red in Actions rather than being discovered by a user.
+- **Serialization:** `rollout` takes its own concurrency group with `cancel-in-progress: false`. The workflow-level group cancels superseded CI runs, which is right for tests and wrong for a rollout — cancelling between `pull` and `up -d` would leave the server holding an image it never started.
+- **Kill switch:** `rollout` is gated on a `DEPLOY_ENABLED` repository variable, so the pipeline stays green before the runner exists and delivery can be suspended during a server migration without editing the workflow.
 - **Invariant:** the deployed commit equals `main` HEAD. The workflow is the only deploy path, deploys exactly the SHA it built, and replaces the server's compose file from `main` on every run — so the invariant covers the topology, not just the image.
 
 ## 4. Cloudflare and SSE
@@ -74,15 +76,16 @@ The heartbeat was verified against the containerized stack before deploy — `: 
 
   `DATABASE_URL` is deliberately **not** a server `.env` key: compose composes it from `POSTGRES_PASSWORD` and `POSTGRES_DB` against the `postgres` service name. Setting it by hand would point the container at a host that does not exist inside it.
 
-- GitHub repository secrets hold only what the deploy job needs. GHCR needs no credential of its own — the workflow authenticates with the automatic `GITHUB_TOKEN` under `packages: write`.
+- **The deploy path holds no repository secrets at all.** Because the rollout runs on the server itself ([ADR 0030](./decisions/0030-self-hosted-runner-rollout.md)), there is no SSH host, user, key, or host key to store, and GHCR is reached with the job's automatic `GITHUB_TOKEN` — so no long-lived registry credential lives on the server either, and the package can stay private.
 
-  | Secret | Purpose |
+  Two non-secret **repository variables** configure it:
+
+  | Variable | Purpose |
   |---|---|
-  | `DEPLOY_HOST` | Server hostname or IP for SSH |
-  | `DEPLOY_USER` | SSH user (a member of the `docker` group) |
-  | `DEPLOY_SSH_KEY` | Private key of a deploy-only keypair |
-  | `DEPLOY_KNOWN_HOSTS` | The server's public host key, pinned — see §3 |
+  | `DEPLOY_ENABLED` | `true` to arm the rollout job; anything else skips it (§3) |
   | `DEPLOY_DIR` | Deploy directory holding `docker-compose.yml` and `.env` (defaults to `/opt/backburner`) |
+
+- **The runner's own configuration is security-relevant and lives outside version control**, so it is recorded here and in ADR 0030: the runner is registered to this repository alone, labelled `backburner-prod`, and **"Fork pull request workflows from outside collaborators" is set to "Require approval for all outside collaborators."** That setting is load-bearing — this is a public repository, and for `pull_request` events GitHub evaluates the workflow file as it exists in the PR branch, so without it a fork could retarget a job at the runner and execute on the host.
 
 ## 7. Codespaces re-verification
 

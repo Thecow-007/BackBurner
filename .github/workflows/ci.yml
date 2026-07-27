@@ -63,38 +63,30 @@ jobs:
           name: server-logs-criteria
           path: packages/e2e/.logs
 
-  # docs/deployment.md §3. Gated on both test jobs: `needs` makes a red build
-  # un-deployable, which is the whole point — there is no other deploy path
-  # and no manual override.
-  deploy:
+  # docs/deployment.md §3, ADR 0030. Delivery is split across two runners on
+  # purpose: the image is built in the cloud, and the server only pulls it.
+  #
+  # Both halves are gated on `needs: [test, criteria]`, so a red suite makes
+  # the deploy structurally unreachable — that gate is the entire point of
+  # keeping these jobs in the test workflow rather than their own.
+
+  # Cloud half. Builds and publishes; touches nothing of the operator's.
+  publish:
     needs: [test, criteria]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Deliberately NOT cancel-in-progress. The workflow-level group above
-    # cancels superseded CI runs, which is right for tests and wrong for a
-    # deploy: cancelling between `pull` and `up -d` would leave the server
-    # holding a new image it never started. Two rapid pushes to main queue
-    # here instead, and the later one wins by finishing last.
-    concurrency:
-      group: deploy-production
-      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
-    # Lifted to job level so the rollout steps can test for their own
-    # preconditions: the `secrets` context is not available in a step-level
-    # `if`, but `env` is.
-    env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+    outputs:
+      image: ${{ steps.img.outputs.name }}:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
       # GHCR rejects uppercase path segments and the repository is
       # Thecow-007/BackBurner, so the name is lowercased rather than
-      # hardcoded — this keeps working if the repo is ever renamed or forked.
+      # hardcoded — this keeps working if the repo is renamed or forked.
       - name: Resolve image name
         id: img
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
@@ -107,9 +99,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Two tags, both pointing at this commit's image: the immutable :<sha>
-      # the server is told to run, and the moving :main tag that
-      # docker-compose.yml falls back to for manual operations on the box.
+      # Two tags on the same image: the immutable :<sha> the server is told to
+      # run, and the moving :main that docker-compose.yml falls back to for
+      # manual operations on the box.
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -121,62 +113,67 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Everything below is the rollout, and it is skipped wholesale until
-      # DEPLOY_HOST exists. Publishing the image is the expensive, always-
-      # useful half; delivery is the half that needs credentials. Splitting
-      # them here means a repository with no deploy secrets still produces a
-      # pullable image and a green run — which is exactly the state during
-      # initial bring-up, and after a server move.
-      - name: Report rollout status
-        if: env.DEPLOY_HOST == ''
-        run: |
-          echo "::notice::DEPLOY_HOST is not set — image published to GHCR, rollout skipped."
-          echo "Set DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS and DEPLOY_DIR to enable automatic delivery."
+  # Server half. Runs on the self-hosted runner, so it needs no inbound
+  # connectivity — which is what makes it work at all against a host that is
+  # IPv6-native with a dynamic IPv4 (ADR 0030).
+  #
+  # Gated on the DEPLOY_ENABLED repository variable so the pipeline stays
+  # green before the runner exists, and can be switched off without editing
+  # this file — during a server migration, say.
+  rollout:
+    needs: publish
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: [self-hosted, backburner-prod]
+    # Bounded so an offline runner fails the run instead of queueing until the
+    # workflow's own 6-hour ceiling.
+    timeout-minutes: 15
+    # Deliberately NOT cancel-in-progress. The workflow-level group cancels
+    # superseded CI runs, which is right for tests and wrong for a rollout:
+    # cancelling between `pull` and `up -d` would leave the server holding an
+    # image it never started. Rapid pushes queue here, and the later wins.
+    concurrency:
+      group: rollout-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/opt/backburner' }}
+      IMAGE: ${{ needs.publish.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Configure SSH
-        if: env.DEPLOY_HOST != ''
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          # Pinned host key, not StrictHostKeyChecking=no. Accepting any key
-          # would let anything that can answer on that address receive the
-          # deploy — and this step hands over shell access to the server.
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
+      # The job's own token, scoped to `packages: read` and valid only for
+      # this run. No long-lived PAT is stored on the server, and the GHCR
+      # package can stay private.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The server's compose file is replaced from main on every deploy, so
-      # "the deployed commit equals main HEAD" covers the topology too, not
-      # just the image (docs/deployment.md §3).
-      - name: Ship the compose file
-        if: env.DEPLOY_HOST != ''
+      # The compose file is refreshed from main on every rollout, so "the
+      # deployed commit equals main HEAD" covers the topology, not just the
+      # image. The deploy directory — not the runner workspace — stays the
+      # source of truth, because that is where the operator's .env lives and
+      # secrets must never enter a workspace Actions can clean or expose.
+      - name: Sync the compose file
         run: |
-          scp -i ~/.ssh/id_deploy docker-compose.yml \
-            "$DEPLOY_USER@$DEPLOY_HOST:${DEPLOY_DIR:-/opt/backburner}/docker-compose.yml"
+          install -m 644 docker-compose.yml "$DEPLOY_DIR/docker-compose.yml"
 
       - name: Roll out
-        if: env.DEPLOY_HOST != ''
-        env:
-          IMAGE: ${{ steps.img.outputs.name }}:${{ github.sha }}
+        working-directory: ${{ env.DEPLOY_DIR }}
         run: |
-          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cd ${DEPLOY_DIR:-/opt/backburner} \
-             && export APP_IMAGE='$IMAGE' \
-             && docker compose pull \
-             && docker compose --profile prod up -d \
-             && docker image prune -f"
+          export APP_IMAGE="$IMAGE"
+          docker compose pull
+          docker compose --profile prod up -d
+          docker image prune -f
 
-      # A deploy that leaves the app unhealthy is a failed deploy, and it must
-      # go red here rather than be discovered on camera. The app's own
-      # healthcheck already polls /health; this waits on that verdict.
+      # A rollout that leaves the app unhealthy is a failed rollout, and it
+      # must go red here rather than be discovered by a user.
       - name: Verify the rollout is healthy
-        if: env.DEPLOY_HOST != ''
+        working-directory: ${{ env.DEPLOY_DIR }}
         run: |
-          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cd ${DEPLOY_DIR:-/opt/backburner} && bash -s" <<'REMOTE'
           for i in $(seq 1 40); do
             cid="$(docker compose --profile prod ps -q app)"
             if [ -n "$cid" ]; then
@@ -196,4 +193,9 @@ jobs:
           cid="$(docker compose --profile prod ps -q app)"
           [ -n "$cid" ] && docker logs --tail 50 "$cid"
           exit 1
-          REMOTE
+
+      # Credentials must not outlive the job on a machine the operator also
+      # uses. `always()` so this runs even when the rollout failed above.
+      - name: Drop registry credentials
+        if: always()
+        run: docker logout ghcr.io || true
