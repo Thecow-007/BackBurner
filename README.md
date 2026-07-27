@@ -4,7 +4,7 @@ BackBurner is a background job runner. Submit a job and get a short, recyclable 
 
 Stack: Node 22 + TypeScript, PostgreSQL 18 (`uuidv7()` is native), npm workspaces monorepo.
 
-The dashboard is served at the root path; the REST and SSE surface is at the same origin. Bearer-key auth is the only gate — no VPN, no allowlist — so `curl` works from any network with a key (see [API surface](#api-surface)).
+**Live at [`https://backburner.danielbierman.ca`](https://backburner.danielbierman.ca).** The dashboard is served at the root path; the REST and SSE surface is at the same origin. Bearer-key auth is the only gate — no VPN, no allowlist, no Cloudflare Access — so `curl` works from any network with a key (see [API surface](#api-surface)).
 
 ## Architecture
 
@@ -218,7 +218,9 @@ Nothing secret lives in this repository. Runtime configuration comes from a serv
 
 The register is a live, resizable three-pane operations view: server-ranked prefix search over handles and ids, a one-press "needs collection" filter whose count always matches the list it opens, per-status and per-lane totals sourced entirely from the server, an attempt-grouped transition timeline, and a submit form that defaults to a random outcome so the register behaves like a system under real load. Every number on screen comes from the API — nothing is inferred from the loaded page ([`docs/frontend-brief.md`](./docs/frontend-brief.md) §6.5).
 
-**Ships on every green push:** the container image builds and publishes to GHCR automatically, gated on the full test matrix (see [Deployment](#deployment)). The production host is being brought up; this section names the live URL once it is serving.
+**Deployed and continuously delivered:** the stack runs at [`backburner.danielbierman.ca`](https://backburner.danielbierman.ca), rebuilt and rolled out automatically on every green push to `main` (see [Deployment](#deployment)).
+
+The production deployment was verified end to end against the live URL, through the real Cloudflare edge rather than a local stand-in: submit-to-`ready` over SSE, collect freeing a handle for immediate reuse by a new task while the old one stayed reachable by id, cancel of a running job, `409`s carrying `current_status` on illegal transitions, per-user isolation, an idle event stream held open for 200 s with heartbeats at exact 20 s intervals (past Cloudflare's ~100 s cull), and a forced drop recovered via `Last-Event-ID` replaying every missed event in order and exactly once.
 
 **Known limits, stated plainly.** The engine is single-process by design: claiming is already multi-process-safe (`FOR UPDATE SKIP LOCKED`, CAS transitions, epoch-guarded completions), but boot recovery assumes it owns every `running` row, so a second process would need a lease or claim-owner column before it could be added safely. Dispatch wake-ups are in-process rather than `LISTEN/NOTIFY`. The transition journal is append-only with no retention policy. Each of these is a deliberate seam rather than an oversight — [`docs/architecture.md`](./docs/architecture.md) §14 covers what changes first with more time.
 
