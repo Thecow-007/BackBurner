@@ -28,7 +28,13 @@ services:
       # Creates the application database on first volume init. Only takes
       # effect on a FRESH data volume — pointing an existing volume at a new
       # name requires creating that database by hand.
-      POSTGRES_DB: ${POSTGRES_DB:-backburner}
+      #
+      # The default is the *dev* name, so that a clean clone running the
+      # README's `docker compose up -d postgres` gets exactly the database the
+      # README's DATABASE_URL then points at — and so local dev and the
+      # devcontainer agree. Production sets POSTGRES_DB=backburner in its
+      # server-side .env.
+      POSTGRES_DB: ${POSTGRES_DB:-backburner_dev}
     ports:
       # Loopback only. "Postgres is never exposed publicly — only the app
       # answers external traffic" (docs/deployment.md §1); a bare "5432:5432"
