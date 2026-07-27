@@ -12,7 +12,13 @@ import { fileURLToPath } from "node:url";
 
 import pg from "pg";
 
-import { createEngine, createMockWorker } from "@backburner/engine";
+import {
+  MOCK_DEFAULT_DURATION_RANGE,
+  MOCK_LONG_DURATION_RANGE,
+  createEngine,
+  createMockWorker,
+} from "@backburner/engine";
+import type { DurationRange, LaneConfig } from "@backburner/engine";
 
 import { buildApp } from "./app.js";
 import { readConfig } from "./config.js";
@@ -23,9 +29,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
 const MIGRATIONS_DIR = path.join(REPO_ROOT, "migrations");
 
-/** Lanes registered with the engine, both backed by the mock worker
- * (api-contract §1 "Registered lanes"). */
-const MOCK_WORKER_LANES: ReadonlySet<string> = new Set(["scrape", "report"]);
+/**
+ * Lanes registered with the engine — all five backed by the mock worker
+ * (api-contract §1 "Registered lanes"). **Insertion order is load-bearing**:
+ * it is the order `counts.lanes` reports and therefore the order the
+ * dashboard's sidebar and submit picker render.
+ *
+ * The value is each lane's range for an omitted `params.duration_ms`. `build`
+ * is the long-running lane (ADR 0021); every other lane keeps the spec's
+ * 3-15 s. The *mechanism* is unchanged from ADR 0017 — the value is still
+ * resolved once, here at the API, before `engine.submit()` — only the range
+ * is per-lane, and it lives with the lane registry rather than in
+ * engine-core, which stays lane-agnostic.
+ */
+const MOCK_WORKER_LANES: ReadonlyMap<string, DurationRange> = new Map([
+  ["scrape", MOCK_DEFAULT_DURATION_RANGE],
+  ["report", MOCK_DEFAULT_DURATION_RANGE],
+  ["convert", MOCK_DEFAULT_DURATION_RANGE],
+  ["build", MOCK_LONG_DURATION_RANGE],
+  ["test", MOCK_DEFAULT_DURATION_RANGE],
+]);
 
 /**
  * Verifies every `.sql` file in the repo-root `migrations/` directory is
@@ -88,13 +111,15 @@ async function main(): Promise<void> {
   }
 
   const worker = createMockWorker();
+  // Built from MOCK_WORKER_LANES so registration order — and therefore
+  // `counts.lanes` order — is defined in exactly one place.
+  const lanes: Record<string, LaneConfig> = {};
+  for (const lane of MOCK_WORKER_LANES.keys()) lanes[lane] = { worker };
+
   const engine = createEngine({
     pool,
     concurrency: config.workerConcurrency,
-    lanes: {
-      scrape: { worker },
-      report: { worker },
-    },
+    lanes,
     backoff: { baseMs: config.backoffBaseMs },
     drainTimeoutMs: config.drainTimeoutMs,
   });

@@ -138,7 +138,17 @@ export function createEngine(opts: EngineOptions): Engine {
     try {
       // laneConfig is guaranteed to exist: the task was only ever queued
       // for a lane present in `lanes` at submit time.
-      outcome = await laneConfig!.worker(job, { signal: controller.signal });
+      //
+      // `attempt`/`maxAttempts` are the SAME values the claim wrote onto the
+      // `running` transition's meta a moment ago (`claimOnce`), read off the
+      // same returned row — so what the worker sees and what the history
+      // endpoint reports for this claim agree byte-for-byte, by construction
+      // rather than by coincidence.
+      outcome = await laneConfig!.worker(job, {
+        signal: controller.signal,
+        attempt: attemptsAtClaim,
+        maxAttempts: row.max_attempts,
+      });
     } catch (err) {
       outcome = { threw: err };
     }

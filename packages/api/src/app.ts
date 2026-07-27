@@ -7,7 +7,7 @@ import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 
-import type { Engine } from "@backburner/engine";
+import type { DurationRange, Engine } from "@backburner/engine";
 
 import { registerErrorHandling } from "./errors.js";
 import { registerEventsRoute } from "./routes/events.js";
@@ -19,8 +19,10 @@ export interface BuildAppOptions {
   engine: Engine;
   pool: Pool;
   sseHeartbeatMs: number;
-  /** Lanes backed by the mock worker — see routes/tasks.ts. */
-  mockWorkerLanes: ReadonlySet<string>;
+  /** Lanes backed by the mock worker, mapped to each lane's omitted-duration
+   * range — see routes/tasks.ts. Insertion order is the lane registration
+   * order. */
+  mockWorkerLanes: ReadonlyMap<string, DurationRange>;
   /** Absolute path to the built SPA. Omitted (or missing on disk) means the
    * dashboard is not served from here — the case in dev, where Vite serves it
    * and proxies the API paths back. */

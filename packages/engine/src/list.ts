@@ -3,11 +3,26 @@
  * pagination, and `as_of` (computed strictly before the tasks query so it
  * may only under-state the snapshot, never over-state it — architecture
  * §11 / api-contract §7).
+ *
+ * Two read modes, never both at once (ADR 0022):
+ *   - the default: filter, sort, keyset-paginate;
+ *   - `?q=`: filter, rank by relevance, return one unpaginated page with
+ *     `next_cursor: null`. `q` with `sort` or `cursor` is a 400 — see
+ *     `parseSearchFilter`.
  */
 import type { Pool } from "pg";
 import { ValidationError } from "./errors.js";
 import { latestEventId } from "./events.js";
-import { parseStatusFilter, parseTimestamp } from "./filters.js";
+import {
+  HOLDS_HANDLE_PREDICATE,
+  UNCOLLECTED_PREDICATE,
+  buildSearchExact,
+  buildSearchMatch,
+  parseSearchFilter,
+  parseStatusFilter,
+  parseTimestamp,
+  parseUncollectedFilter,
+} from "./filters.js";
 import { serializeTask, toIso } from "./serialize.js";
 import type { ListFilters, TaskObject, TaskRow } from "./types.js";
 
@@ -61,6 +76,10 @@ export async function listTasks(
   const status = parseStatusFilter(filters.status);
   const fromDate = filters.from !== undefined ? parseTimestamp(filters.from, "from") : undefined;
   const toDate = filters.to !== undefined ? parseTimestamp(filters.to, "to") : undefined;
+  const uncollectedOnly = parseUncollectedFilter(filters.uncollected);
+  // Validates `q` AND rejects the two orderings that cannot coexist with it,
+  // so the sort/cursor parse below is only ever reached in the default mode.
+  const q = parseSearchFilter(filters);
   const { field, dir } = parseSort(filters.sort);
 
   const limit = filters.limit ?? DEFAULT_LIMIT;
@@ -91,6 +110,27 @@ export async function listTasks(
     values.push(toDate);
     conditions.push(`created_at < $${values.length}`);
   }
+  if (uncollectedOnly) {
+    conditions.push(`(${UNCOLLECTED_PREDICATE})`);
+  }
+
+  // ── Search mode: ranked, unpaginated ────────────────────────────────
+  if (q !== undefined) {
+    conditions.push(buildSearchMatch(q, values));
+    const exact = buildSearchExact(q, values);
+    values.push(limit);
+    const sql =
+      `SELECT * FROM tasks WHERE ${conditions.join(" AND ")}` +
+      ` ORDER BY (CASE WHEN ${exact} THEN 0 ELSE 1 END),` +
+      ` (CASE WHEN ${HOLDS_HANDLE_PREDICATE} THEN 0 ELSE 1 END),` +
+      ` created_at DESC, id DESC LIMIT $${values.length}`;
+    const { rows } = await pool.query<TaskRow>(sql, values);
+    // Never a cursor: relevance ranking is not a keyset order, so there is
+    // no position to resume from. `counts.matching` carries the true total.
+    return { tasks: rows.map(serializeTask), as_of, next_cursor: null };
+  }
+
+  // ── Default mode: sorted, keyset-paginated ──────────────────────────
   if (cursor !== undefined) {
     const cmp = dir === "desc" ? "<" : ">";
     values.push(cursor.v, cursor.id);

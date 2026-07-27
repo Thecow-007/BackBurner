@@ -15,14 +15,32 @@
  * ready+uncollected, 5% failed+uncollected (recent, actionable) — and **zero
  * queued or running rows**. A seeded in-flight job would be a lie the boot
  * recovery path (architecture §11) would immediately expose.
+ *
+ * Lanes and durations track the live registry (ADR 0021): all five registered
+ * lanes appear, and `build` tasks are drawn from the long 20-90 s range so a
+ * reviewer reading seeded history sees the same durations a live `build`
+ * submit produces.
  */
 import { lockAllocator, nextHandleNum } from "./allocator.js";
 import { withTransaction } from "./db.js";
+import { MOCK_DEFAULT_DURATION_RANGE, MOCK_LONG_DURATION_RANGE } from "./worker.js";
 import type { Pool, PoolClient } from "pg";
 
-const LANES = ["scrape", "report"] as const;
+/** Every registered lane (api-contract §1), so the seeded history exercises
+ * all of them rather than only the first two. */
+const LANES = ["scrape", "report", "convert", "build", "test"] as const;
+/** The long-running lane: its seeded durations come from the same 20-90 s
+ * range live submits draw from, so the corpus is coherent with what a
+ * reviewer sees when they submit one (ADR 0021). */
+const LONG_LANES: ReadonlySet<string> = new Set(["build"]);
 const MAX_ATTEMPTS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Share of the two `ready` buckets that get a flaky (fail-then-succeed)
+ * history instead of a clean first-attempt one. Purely a *shape* within
+ * those buckets — the normative 70/10/10/5/5 category split in architecture
+ * §12 is untouched. */
+const FLAKY_SHARE = 0.2;
 
 /** The five seeded outcome buckets. No `queued`/`running` — see file header. */
 type Category =
@@ -175,9 +193,14 @@ function createdAtFor(category: Category, from: Date, to: Date, rng: () => numbe
   return new Date(Math.floor(t));
 }
 
-/** Build the full task + transition spec for one seeded task. */
-function buildTaskSpec(category: Category, rng: () => number): TaskSpec {
-  const durationMs = randInt(rng, 1000, 15000);
+/**
+ * Build the full task + transition spec for one seeded task. `lane` decides
+ * only which duration range the synthetic `duration_ms` is drawn from — the
+ * outcome shapes themselves are lane-independent.
+ */
+function buildTaskSpec(category: Category, rng: () => number, lane: string): TaskSpec {
+  const range = LONG_LANES.has(lane) ? MOCK_LONG_DURATION_RANGE : MOCK_DEFAULT_DURATION_RANGE;
+  const durationMs = randInt(rng, range.min, range.max);
   const claimDelay = randInt(rng, 200, 1500); // queued -> running
   const runningMeta = { attempt: 1, max_attempts: MAX_ATTEMPTS };
 
@@ -185,18 +208,52 @@ function buildTaskSpec(category: Category, rng: () => number): TaskSpec {
     case "ready_collected":
     case "ready_uncollected": {
       const collected = category === "ready_collected";
-      const readyAt = claimDelay + durationMs;
+      // A minority of ready tasks are flaky: one retryable failure, a
+      // backoff hop, then success on attempt 2 — the history a live
+      // `params.fail_times: 1` submit produces. Same bucket, same status,
+      // same collected-ness; only the journal and `attempts` differ, so the
+      // normative category distribution is untouched.
+      const flaky = rng() < FLAKY_SHARE;
+      const attempts = flaky ? 2 : 1;
+      const flakyReason =
+        "mock flaky failure: attempt 1 of 1 scheduled to fail via params.fail_times";
+      const backoffMs = 100;
+
       const transitions: TransitionSpec[] = [
         { eventType: "accepted", fromStatus: null, toStatus: "queued", offsetMs: 0, meta: { summary: "queued" } },
         { eventType: "running", fromStatus: "queued", toStatus: "running", offsetMs: claimDelay, meta: runningMeta },
-        {
-          eventType: "ready",
-          fromStatus: "running",
-          toStatus: "ready",
-          offsetMs: readyAt,
-          meta: { summary: `finished in ${(durationMs / 1000).toFixed(1)}s` },
-        },
       ];
+      let readyAt = claimDelay + durationMs;
+      if (flaky) {
+        transitions.push({
+          eventType: "retrying",
+          fromStatus: "running",
+          toStatus: "queued",
+          offsetMs: readyAt,
+          meta: {
+            attempt: 1,
+            max_attempts: MAX_ATTEMPTS,
+            reason: flakyReason,
+            run_after: new Date(0).toISOString(), // resolved at insert time
+          },
+        });
+        readyAt += backoffMs;
+        transitions.push({
+          eventType: "running",
+          fromStatus: "queued",
+          toStatus: "running",
+          offsetMs: readyAt,
+          meta: { attempt: 2, max_attempts: MAX_ATTEMPTS },
+        });
+        readyAt += durationMs;
+      }
+      transitions.push({
+        eventType: "ready",
+        fromStatus: "running",
+        toStatus: "ready",
+        offsetMs: readyAt,
+        meta: { summary: `finished in ${(durationMs / 1000).toFixed(1)}s` },
+      });
       if (collected) {
         transitions.push({
           eventType: "collected",
@@ -209,8 +266,8 @@ function buildTaskSpec(category: Category, rng: () => number): TaskSpec {
       return {
         status: "ready",
         collected,
-        attempts: 1,
-        params: { duration_ms: durationMs },
+        attempts,
+        params: flaky ? { duration_ms: durationMs, fail_times: 1 } : { duration_ms: durationMs },
         result: { message: "completed", slept_ms: durationMs },
         error: null,
         transitions,
@@ -469,7 +526,7 @@ export async function seedTasks(pool: Pool, options: SeedOptions): Promise<SeedS
     for (const category of plan) {
       const lane = pick(rng, LANES);
       const createdAt = createdAtFor(category, from, to, rng);
-      const spec = buildTaskSpec(category, rng);
+      const spec = buildTaskSpec(category, rng, lane);
       await withTransaction(pool, (client) => insertSeededTask(client, userId, lane, createdAt, spec));
       summary.inserted += 1;
       summary.byCategory[category] += 1;

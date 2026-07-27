@@ -24,7 +24,12 @@ import pg from "pg";
 import { seedTasks, resetSeeded, defaultWindow } from "../packages/engine/dist/seed.js";
 import { upsertSeedUser, ensureSeedUser } from "../packages/api/dist/users.js";
 
-const SEED_USERS = ["daniel", "reviewer"];
+// Every seed user is provisioned and has its key printed. Only the users in
+// TASK_SEED_USERS receive tasks: `newcomer` is deliberately left with an
+// empty register so every empty state in the dashboard can be demonstrated on
+// demand, against a real key, without deleting anybody's data.
+const SEED_USERS = ["daniel", "reviewer", "newcomer"];
+const TASK_SEED_USERS = ["daniel", "reviewer"];
 
 function parseArgs(argv) {
   const out = { tasks: 300, from: undefined, to: undefined, reset: false, databaseUrl: undefined };
@@ -97,12 +102,13 @@ async function main() {
     const from =
       args.from !== undefined ? parseDate(args.from, "--from") : defaultWindow(to).from;
 
-    // Provision (rotate + print) the seed users, capturing their ids.
+    // Provision (rotate + print) every seed user, capturing the ids of the
+    // ones that get tasks.
     const userIds = [];
     for (const name of SEED_USERS) {
       const rawKey = newRawKey();
       const id = await upsertSeedUser(pool, name, rawKey);
-      userIds.push(id);
+      if (TASK_SEED_USERS.includes(name)) userIds.push(id);
       // The one place raw keys are ever printed (api-contract §2).
       console.log(`${name}: ${rawKey}`);
     }
@@ -114,6 +120,9 @@ async function main() {
     console.log(
       `[seed] inserted ${summary.inserted} tasks across ${userIds.length} users ` +
         `in [${from.toISOString()}, ${to.toISOString()}). ${byCat}`
+    );
+    console.log(
+      `[seed] newcomer intentionally has zero tasks — use its key to demo the empty states.`
     );
   } finally {
     await pool.end();

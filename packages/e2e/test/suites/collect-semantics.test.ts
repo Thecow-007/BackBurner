@@ -33,8 +33,8 @@ import {
  * One server per FILE, spawned with `WORKER_CONCURRENCY: "1"` so a single
  * long-running blocker deterministically keeps a second submit `queued`
  * (used to exercise handle reuse and the queued/running/cancelled 409s).
- * Only `scrape` and `report` are registered lanes (api-contract §1.1) — both
- * are used across the file's tests, never an invented lane name.
+ * This file only ever submits to `scrape` and `report` — two of the five
+ * registered lanes (api-contract §1) — never an invented lane name.
  *
  * ── Canonical supplemental-suite lifecycle (test-plan.md §3.1-§3.2) ──
  * See auth-isolation.test.ts for the full rationale.

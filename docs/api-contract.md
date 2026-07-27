@@ -51,17 +51,32 @@ Deliberate interpretation calls are collected in [Spec ambiguities and resolutio
 
 ### Registered lanes
 
-Two lanes are registered out of the box, both backed by the mock worker: `scrape` and `report`. The mock worker reads three params:
+Five lanes are registered out of the box, all backed by the mock worker, **in this registration order**:
+
+| Lane | Omitted `duration_ms` is drawn from |
+|---|---|
+| `scrape` | 3000–15000 ms |
+| `report` | 3000–15000 ms |
+| `convert` | 3000–15000 ms |
+| `build` | **20000–90000 ms** — the long-running lane ([ADR 0021](./decisions/0021-flaky-outcomes-attempt-context-and-per-lane-durations.md)) |
+| `test` | 3000–15000 ms |
+
+The order is contract, not incidental: it is the order [`counts.lanes`](#the-counts-object--extension) reports and therefore the order the dashboard's sidebar and submit picker render. The per-lane ranges are reported to clients as [`counts.lane_defaults`](#the-counts-object--extension), so a submit form states a lane's actual range instead of hard-coding one.
+
+The mock worker reads four params:
 
 | Param         | Type    | Behavior |
 |---------------|---------|----------|
-| `duration_ms` | integer, 1–600000 | Sleep this long. Omitted: a random duration between 3000 and 15000 ms is chosen once, at submit time, and written into the stored `params.duration_ms` — the task object thereafter echoes the filled-in value, retries reuse it (deterministic), and the mock result's `slept_ms` equals it. |
+| `duration_ms` | integer, 1–600000 | Sleep this long. Omitted: a random duration from **the lane's range above** is chosen once, at submit time, and written into the stored `params.duration_ms` — the task object thereafter echoes the filled-in value, retries reuse it (deterministic), and the mock result's `slept_ms` equals it. |
 | `fail`        | boolean | `true`: the worker returns a retryable failure with reason `"mock failure requested via params.fail"`. |
 | `fail_permanent` | boolean | `true`: the worker returns a **non-retryable** failure with reason `"mock permanent failure requested via params.fail_permanent"` — the task lands in `failed` on its first attempt, attempt budget ignored. Wins over `fail` when both are set. Operator retry remains available afterward: `retryable: false` gates auto-retry only. |
+| `fail_times`  | integer, 1–9 — **[EXTENSION]** | The worker returns a **retryable** failure while the current attempt number is ≤ `fail_times`, and succeeds on every later attempt — a flaky job that passes on retry. Reason: `"mock flaky failure: attempt <n> of <fail_times> scheduled to fail via params.fail_times"`. `fail_permanent` wins over it; `fail` wins over it. If `fail_times` ≥ the attempt budget the task simply exhausts the budget and lands in `failed`, retryable. |
 
 Extra `params` keys are accepted and passed through to the worker untouched.
 
-Neither `scrape` nor `report` configures a per-lane `maxAttempts` default; both fall through to the global default of 3. Per-lane defaults exist as an engine capability ([§6.1](#61-post-tasks--spec)'s "the lane's configured default") but are unused by the bundled registry.
+With **no** outcome param set, a job always succeeds. The default outcome is deterministic and never a server-side dice roll — where the bundled dashboard wants a mix, it rolls the dice client-side and submits explicit params.
+
+No lane configures a per-lane `maxAttempts` default; all five fall through to the global default of 3. Per-lane defaults exist as an engine capability ([§6.1](#61-post-tasks--spec)'s "the lane's configured default") but are unused by the bundled registry.
 
 ---
 
@@ -297,7 +312,7 @@ An `accepted` event is emitted on `/events` at the same time.
 |------|-----------|------|
 | 201  | —         | Task enqueued |
 | 400  | `unknown_lane` | No worker registered for `lane` |
-| 400  | `invalid_params` | Malformed body, bad `params.duration_ms` / `params.fail` / `params.fail_permanent`, `max_attempts` out of range, unknown top-level field |
+| 400  | `invalid_params` | Malformed body, bad `params.duration_ms` / `params.fail` / `params.fail_permanent` / `params.fail_times`, `max_attempts` out of range, unknown top-level field |
 | 401  | `unauthorized` | Bad or missing key |
 
 ---
@@ -356,8 +371,15 @@ Authorization: Bearer bb_9f2ce4a1b7d8036c5e12f409ab87cd3210fe6b54
     "matching": 2,
     "uncollected": 12,
     "status": { "queued": 1, "running": 2, "ready": 96, "failed": 47, "cancelled": 38 },
-    "lane": { "scrape": 2, "report": 2 },
-    "lanes": ["scrape", "report"]
+    "lane": { "scrape": 2, "report": 2, "convert": 0, "build": 0, "test": 0 },
+    "lanes": ["scrape", "report", "convert", "build", "test"],
+    "lane_defaults": {
+      "scrape": { "duration_ms": { "min": 3000, "max": 15000 } },
+      "report": { "duration_ms": { "min": 3000, "max": 15000 } },
+      "convert": { "duration_ms": { "min": 3000, "max": 15000 } },
+      "build": { "duration_ms": { "min": 20000, "max": 90000 } },
+      "test": { "duration_ms": { "min": 3000, "max": 15000 } }
+    }
   }
 }
 ```
@@ -376,8 +398,15 @@ With no filters applied, `counts` describes the whole register:
   "matching": 312,
   "uncollected": 19,
   "status": { "queued": 2, "running": 4, "ready": 168, "failed": 77, "cancelled": 61 },
-  "lane": { "scrape": 184, "report": 128 },
-  "lanes": ["scrape", "report"]
+  "lane": { "scrape": 184, "report": 128, "convert": 0, "build": 0, "test": 0 },
+  "lanes": ["scrape", "report", "convert", "build", "test"],
+  "lane_defaults": {
+    "scrape": { "duration_ms": { "min": 3000, "max": 15000 } },
+    "report": { "duration_ms": { "min": 3000, "max": 15000 } },
+    "convert": { "duration_ms": { "min": 3000, "max": 15000 } },
+    "build": { "duration_ms": { "min": 20000, "max": 90000 } },
+    "test": { "duration_ms": { "min": 3000, "max": 15000 } }
+  }
 }
 ```
 
@@ -385,21 +414,41 @@ The response example above shows that same register through `?status=running&lan
 
 | Field | Type | Respects | Ignores | Answers |
 |---|---|---|---|---|
-| `all` | integer | `from`, `to` | `status`, `lane` | "how many tasks are in the register at all" |
+| `all` | integer | `from`, `to` | `status`, `lane`, `uncollected`, `q` | "how many tasks are in the register at all" |
 | `matching` | integer | every active filter | nothing | "how many tasks does the current view list" — the total behind `10 of N` |
-| `uncollected` | integer | `lane`, `from`, `to` | `status` | "how many finished results are waiting to be collected" |
-| `status.*` | object, integer values | `lane`, `from`, `to` | `status` | the per-status breakdown, so selecting a status shows exactly the number advertised |
-| `lane.*` | object, integer values | `status`, `from`, `to` | `lane` | the per-lane breakdown, unchanged while one lane is selected |
+| `uncollected` | integer | `lane`, `from`, `to` | `status`, `uncollected`, `q` | "how many finished results are waiting to be collected" |
+| `status.*` | object, integer values | `lane`, `from`, `to`, `uncollected`, `q` | `status` | the per-status breakdown, so selecting a status shows exactly the number advertised |
+| `lane.*` | object, integer values | `status`, `from`, `to`, `uncollected`, `q` | `lane` | the per-lane breakdown, unchanged while one lane is selected |
 | `lanes` | array of strings | nothing | all filters | the lanes **registered** with the engine, in registration order |
+| `lane_defaults` | object — **[EXTENSION]** | nothing | all filters | each mock-worker-backed lane's range for an omitted `params.duration_ms` |
+
+The `uncollected` and `q` columns spell out the rows the two [§7](#7-listing-filters-sort-pagination-as_of) extension filters affect. Two of them read oddly at first glance and are deliberate:
+
+- **`uncollected` the count ignores `uncollected` the filter**, for exactly the reason `status.*` ignores `status`: it *is* that predicate. It is the badge that opens the filter, so narrowing it by its own filter would make it collapse to itself the moment a user clicked it. Its basis stays `lane`/`from`/`to`.
+- **`all` and `uncollected` both ignore `q`.** The grand total and the "waiting to be collected" badge are register-wide affordances, not search-local ones; a search narrows what you are *looking at*, not what exists.
+
+#### `lane_defaults` — [EXTENSION]
+
+One entry per mock-worker-backed lane, in registration order (the same order as `lanes`), each giving that lane's inclusive `[min, max]` range for an omitted `params.duration_ms`:
+
+```json
+"lane_defaults": {
+  "scrape": { "duration_ms": { "min": 3000, "max": 15000 } },
+  "build":  { "duration_ms": { "min": 20000, "max": 90000 } }
+}
+```
+
+It exists so a submit form can state a lane's actual range instead of hard-coding "3–15 s" — a number the client cannot otherwise source, and therefore one it must not assert ([frontend-brief.md](./frontend-brief.md) §6.5). It is added by the API, not the engine: the ranges are mock-worker metadata, and the engine is deliberately lane-agnostic ([ADR 0017](./decisions/0017-mock-params-normalized-by-caller.md), [ADR 0021](./decisions/0021-flaky-outcomes-attempt-context-and-per-lane-durations.md)). A lane registered with a non-mock worker would appear in `lanes` and not in `lane_defaults`.
 
 Guarantees a client may rely on:
 
 - `status` always carries **all five** status keys, zero-valued when empty — never a partial object.
-- `sum(status.*) === all` exactly, whenever no `lane` filter is active.
+- `sum(status.*) === all` exactly, whenever no `lane`, `uncollected`, or `q` filter is active.
 - `lane` carries one key per registered lane, zero-valued when that lane has no matching tasks (plus a key for any lane present in the data but no longer registered — those rows exist and are not hidden).
 - `lanes` is engine lane *registration*, not `SELECT DISTINCT lane`: a brand-new user with zero tasks still receives the full list, which is what a submit form's lane picker is built from.
+- `lane_defaults` carries one entry per mock-worker-backed lane, in the same order as `lanes`.
 - Everything is scoped to the authenticated user, exactly like the list itself.
-- `sort`, `limit`, and `cursor` do not affect any count.
+- `sort`, `limit`, and `cursor` do not affect any count. Under `q`, `matching` is the **whole** match set, not the truncated page — which is what lets a client say "showing 20 of 184 matches" honestly.
 
 `counts` and the page are read back-to-back rather than inside one snapshot, so — exactly like `as_of` ([§7](#7-listing-filters-sort-pagination-as_of)) — a task committing between the two reads may be counted without appearing on the page. The filter bases above are exact; the instant is adjacent, not atomic.
 
@@ -408,7 +457,7 @@ Guarantees a client may rely on:
 | Code | Error code | When |
 |------|-----------|------|
 | 200  | —         | Always, including an empty list |
-| 400  | `invalid_params` | Unknown status value, bad date, bad sort spec, limit out of range, invalid cursor |
+| 400  | `invalid_params` | Unknown status value, bad date, bad sort spec, limit out of range, invalid cursor, `uncollected` other than the literal `true`, `q` outside 1–64 chars, `q` combined with `sort` or `cursor` |
 | 401  | `unauthorized` | Bad or missing key |
 
 ---
@@ -726,8 +775,30 @@ All parameters apply to `GET /tasks` and combine freely. Invalid values are reje
 | `sort`    | **[EXTENSION]** | `created_at` or `updated_at`, optionally `:asc`/`:desc` | Default `created_at:desc` (newest first). Direction defaults to `desc`. Ties broken by `id` in the same direction, so ordering is total and stable. |
 | `limit`   | **[EXTENSION]** | integer 1–200 | Page size. Default 50. |
 | `cursor`  | **[EXTENSION]** | opaque string | Resume token from a previous response's `next_cursor`. |
+| `uncollected` | **[EXTENSION]** | the literal string `true` | Restrict to `status IN ('ready','failed') AND collected = false` — the *exact* predicate behind `counts.uncollected`, so the badge and the view it opens can never disagree. Composes freely with every other parameter. Any other value (`false`, `1`, `yes`, empty) is `400 invalid_params`: a client that wants the filter off omits the parameter. |
+| `q`       | **[EXTENSION]** | string, 1–64 chars after trimming | Free-text lookup over handle and id. See below. |
 
-These same parameters also shape the response's `counts` object — but **not uniformly**: `all` ignores `status` and `lane`, `status.*` ignores `status`, `lane.*` ignores `lane`, and `lanes` ignores everything. The per-field filter basis is normative and lives in [§6.2](#62-get-tasks--spec).
+### `q` — free-text lookup — [EXTENSION]
+
+Case-insensitive. A task matches when **any** of these hold:
+
+1. its handle (`<lane>-<n>`) equals `q`;
+2. its `id` equals `q`;
+3. its handle starts with `q`;
+4. its `id` starts with `q`.
+
+So `q=scrape` returns every scrape, and `q=scrape-1` returns `scrape-1`, `scrape-10`, `scrape-19`… `%`, `_`, and `\` in `q` are matched literally.
+
+When `q` is present the result is **rank-ordered and unpaginated**:
+
+- **Ranking:** (a) exact handle-or-id matches first; (b) then tasks that still hold their handle (`queued`/`running`, or `ready`/`failed` with `collected = false`) before released former holders; (c) then `created_at` descending; (d) ties by `id` descending. Tier (b) exists because handles recycle ([§5](#5-handles-and-resolution)): a live `report-1` and a released former `report-1` both answer honestly, and the live one is the one the caller meant.
+- `next_cursor` is **always `null`**.
+- `limit` applies normally (default 50, max 200), and `counts.matching` counts **all** matches under the other active filters — so a client can say "showing 20 of 184 matches" without inferring a total.
+- **`q` with `cursor`, or `q` with `sort`, is `400 invalid_params`**, with a message naming the conflict. Relevance ranking and an explicit sort are two different orderings; silently picking one would be a lie, and a keyset cursor over a rank that is not a keyset is incorrect.
+
+Rationale, alternatives, and why search is not done client-side over the loaded page: [ADR 0022](./decisions/0022-uncollected-and-search-list-filters.md).
+
+These same parameters also shape the response's `counts` object — but **not uniformly**: `all` ignores `status`, `lane`, `uncollected` and `q`; `status.*` ignores `status`; `lane.*` ignores `lane`; the `uncollected` count ignores `status`, `uncollected` and `q`; and `lanes`/`lane_defaults` ignore everything. The per-field filter basis is normative and lives in [§6.2](#62-get-tasks--spec).
 
 ### Pagination
 
@@ -898,8 +969,26 @@ curl -s -X POST $BASE/tasks \
   -H "Content-Type: application/json" \
   -d '{"lane":"report","params":{"duration_ms":2000,"fail":true}}'
 
+# Submit a flaky job: fails once, backs off, then succeeds on attempt 2
+curl -s -X POST $BASE/tasks \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"lane":"convert","params":{"duration_ms":2000,"fail_times":1}}'
+
+# Submit a long build (omitted duration_ms -> a random 20-90s on this lane)
+curl -s -X POST $BASE/tasks \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"lane":"build"}'
+
 # List running scrape tasks
 curl -s "$BASE/tasks?status=running&lane=scrape" -H "Authorization: Bearer $KEY"
+
+# Everything finished and still waiting to be collected
+curl -s "$BASE/tasks?uncollected=true" -H "Authorization: Bearer $KEY"
+
+# Look a task up by handle or id prefix (ranked, unpaginated)
+curl -s "$BASE/tasks?q=scrape-1" -H "Authorization: Bearer $KEY"
 
 # Fetch one task by handle
 curl -s $BASE/tasks/scrape-1 -H "Authorization: Bearer $KEY"
@@ -938,4 +1027,4 @@ Places where the assessment spec is silent, self-tensioned, or open to interpret
 | 7 | The spec requires operator retry ("the operator decides when to retry") but lists no retry endpoint. | `POST /tasks/{handle}/retry`, extension, legal only from `failed`, resets the attempt budget. | The dashboard is required to be a pure API consumer, so every dashboard action must exist as an endpoint. Budget reset reflects that a human decision supersedes the exhausted automatic budget. |
 | 8 | The spec mandates per-user API keys and a live event stream (SSE or WebSocket); we chose SSE ([ADR 0007](./decisions/0007-sse-over-websockets.md)), and browser `EventSource` cannot send an `Authorization` header (browser WebSocket clients cannot set arbitrary headers either). | `/events` — and only `/events` — additionally accepts `?api_key=`. | The two spec requirements are jointly unsatisfiable for browser SSE clients without one of: query-param auth, cookies, or a token handshake. The query param is the smallest mechanism, confined to the one endpoint that needs it. |
 | 9 | What should `GET /tasks/{handle}` return after the task is collected or cancelled — the spec doesn't say whether a released handle still resolves. | Active holder first; otherwise the most recent former holder; otherwise `404`. Permanent access via `GET /tasks/id/{id}`. | Collecting a result should not instantly 404 the handle you just used — scripts routinely collect and re-read. Once the handle is re-leased the new task must win, so former-holder access is best-effort by design and `id` is the durable reference. |
-| 10 | The spec fixes `type Worker = (job: Job) => Promise<WorkerResult>`, but also requires that a running worker actually stop on cancel; the signal must reach the worker somehow. | Additive second parameter: `Worker = (job, ctx: { signal: AbortSignal })`. A spec-shaped one-argument worker remains assignable and fully functional. | The two spec requirements are jointly unsatisfiable without delivering an abort channel; the addition is ignorable, documented, and badged (the worker contract in [`architecture.md`](./architecture.md), [ADR 0010](./decisions/0010-additive-api-extension-policy.md)). |
+| 10 | The spec fixes `type Worker = (job: Job) => Promise<WorkerResult>`, but also requires that a running worker actually stop on cancel; the signal must reach the worker somehow. | Additive second parameter: `Worker = (job, ctx: { signal: AbortSignal; attempt: number; maxAttempts: number })`. A spec-shaped one-argument worker remains assignable and fully functional. | The two spec requirements are jointly unsatisfiable without delivering an abort channel; the addition is ignorable, documented, and badged (the worker contract in [`architecture.md`](./architecture.md), [ADR 0010](./decisions/0010-additive-api-extension-policy.md)). `attempt`/`maxAttempts` were added on the same terms ([ADR 0021](./decisions/0021-flaky-outcomes-attempt-context-and-per-lane-durations.md)): a worker that must behave differently on a retry — `params.fail_times` is the bundled example — cannot otherwise know which attempt it is on, and the numbers handed over are the same ones the engine journals onto that claim's `running` transition, so worker and history can never disagree. |

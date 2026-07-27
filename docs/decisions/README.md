@@ -28,3 +28,13 @@ Where a record extends or resolves an ambiguity in the assessment spec ([`docs/a
 | [0016](0016-single-schema-migration.md) | One migration creates the full shared schema | Accepted |
 | [0017](0017-mock-params-normalized-by-caller.md) | Mock-worker param defaults filled by the caller, not the engine core | Accepted |
 | [0018](0018-task-counts-on-list-response.md) | Task counts ride on the list response | Accepted |
+| [0019](0019-infinite-scroll-over-load-more.md) | Infinite scroll over a "Load more" button | Accepted |
+| [0020](0020-identity-chip-shows-the-key-not-a-name.md) | The identity chip shows the key, not a name | Accepted |
+| [0021](0021-flaky-outcomes-attempt-context-and-per-lane-durations.md) | Flaky mock outcomes, an attempt-aware worker context, and per-lane duration defaults | Accepted |
+| [0022](0022-uncollected-and-search-list-filters.md) | The `uncollected` and `q` list filters | Accepted |
+| [0023](0023-failed-toasts-auto-dismiss.md) | Failed toasts auto-dismiss after 15 s | Accepted |
+| [0024](0024-collected-as-a-first-class-column.md) | `collected` becomes a first-class column, and the register's tracks become container-driven | Accepted |
+| [0025](0025-resizable-sidebar-and-detail-panes.md) | Resizable sidebar and detail pane, bounded in CSS | Accepted |
+| [0026](0026-detail-pane-only-with-a-selection.md) | The register spans the full width when nothing is selected | Accepted |
+| [0027](0027-search-overlay-reads-the-server.md) | The search overlay reads the server, and keeps the results out of the store | Accepted |
+| [0028](0028-random-submit-outcomes-rolled-client-side.md) | Random submit outcomes, rolled in the browser | Accepted |

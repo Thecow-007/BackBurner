@@ -58,20 +58,28 @@ describe("seeds-smoke", () => {
     }
   });
 
-  const KEY_LINE_RE = /^(daniel|reviewer): (bb_[0-9a-f]{40})$/gm;
+  const KEY_LINE_RE = /^(daniel|reviewer|newcomer): (bb_[0-9a-f]{40})$/gm;
+  /** All three seed users are provisioned and printed; only the first two
+   * receive tasks (architecture §12). `newcomer` exists precisely so every
+   * empty state can be demonstrated against a real key. */
+  const SEED_USERS = ["daniel", "reviewer", "newcomer"] as const;
 
-  /** Parses both `daniel:`/`reviewer:` key lines out of a seed run's stdout
-   * and returns the `reviewer` key. Fails loudly (with the full stdout) if
-   * either line is missing or malformed. */
-  function parseReviewerKey(stdout: string, label: string): string {
+  /** Parses all three key lines out of a seed run's stdout. Fails loudly
+   * (with the full stdout) if any line is missing or malformed. */
+  function parseSeedKeys(stdout: string, label: string): Map<string, string> {
     const found = new Map<string, string>();
     for (const m of stdout.matchAll(KEY_LINE_RE)) {
       found.set(m[1]!, m[2]!);
     }
-    expect(found.size, `${label}: expected both daniel and reviewer key lines in stdout:\n${stdout}`).toBe(2);
-    const reviewerKey = found.get("reviewer");
-    expect(reviewerKey, `${label}: missing reviewer key line in stdout:\n${stdout}`).toBeDefined();
-    return reviewerKey as string;
+    expect(
+      [...found.keys()].sort(),
+      `${label}: expected a key line for every seed user in stdout:\n${stdout}`
+    ).toEqual([...SEED_USERS].sort());
+    return found;
+  }
+
+  function parseReviewerKey(stdout: string, label: string): string {
+    return parseSeedKeys(stdout, label).get("reviewer") as string;
   }
 
   it("seeds a full corpus, exposes it through the API in every bucket, coexists with live data, and survives --reset", async () => {
@@ -80,7 +88,9 @@ describe("seeds-smoke", () => {
     // 1. Full seed over a fixed window; parse both printed raw keys.
     const fullSeed = await runSeedCli(["--tasks", "50", "--from", "2026-04-01", "--to", "2026-07-01"]);
     expect(fullSeed.code, `full seed failed:\n${fullSeed.stderr}`).toBe(0);
-    const reviewerKey = parseReviewerKey(fullSeed.stdout, "full seed");
+    const seedKeys = parseSeedKeys(fullSeed.stdout, "full seed");
+    const reviewerKey = seedKeys.get("reviewer") as string;
+    const newcomerKey = seedKeys.get("newcomer") as string;
 
     // 2. Seeded-corpus shape, through the reviewer's own list.
     const listRes = await listTasks(b, reviewerKey, { limit: 200 });
@@ -125,6 +135,31 @@ describe("seeds-smoke", () => {
       expect(present, `missing at least one seeded task in bucket "${bucket}"`).toBe(true);
     }
 
+    // Seeded history exercises every registered lane, not just the first two.
+    const seededLanes = new Set(seededTasks.map((t) => t.lane));
+    for (const lane of ["scrape", "report", "convert", "build", "test"]) {
+      expect(seededLanes.has(lane), `no seeded task in lane "${lane}"`).toBe(true);
+    }
+    // `build` is the long lane live; its seeded durations must agree, or the
+    // seeded corpus would teach a reviewer the wrong thing about it.
+    for (const task of seededTasks.filter((t) => t.lane === "build")) {
+      const d = task.params.duration_ms as number;
+      expect(d, `seeded build ${task.handle} duration ${d}`).toBeGreaterThanOrEqual(20000);
+      expect(d, `seeded build ${task.handle} duration ${d}`).toBeLessThanOrEqual(90000);
+    }
+
+    // 2b. `newcomer` is provisioned with a working key and ZERO tasks — the
+    // empty-state demo account. Its register is empty while still carrying
+    // the full registered-lane list, exactly like any new user's.
+    const newcomerRes = await listTasks(b, newcomerKey, { limit: 200 });
+    expect(newcomerRes.status, `newcomer list failed: ${JSON.stringify(newcomerRes.body)}`).toBe(200);
+    const newcomerBody = newcomerRes.body as TaskListResponse;
+    expect(newcomerBody.tasks, "newcomer must have no tasks at all").toEqual([]);
+    expect(newcomerBody.counts.all).toBe(0);
+    expect(newcomerBody.counts.matching).toBe(0);
+    expect(newcomerBody.counts.uncollected).toBe(0);
+    expect(newcomerBody.counts.lanes).toEqual(["scrape", "report", "convert", "build", "test"]);
+
     // 3. Live-data coexistence: a real submit still works for the reviewer,
     // proving the real handle allocator tolerates the seeded rows.
     const liveRes = await submit(b, reviewerKey, { lane: "scrape", params: { duration_ms: 1000 } });
@@ -149,6 +184,12 @@ describe("seeds-smoke", () => {
     expect(afterResetTasks.some((t) => t.seeded === true), "no task should remain seeded after --reset").toBe(
       false
     );
+
+    // `--reset` ensures all three seed users exist without rotating any key,
+    // so the empty-state account survives it too.
+    const newcomerAfterReset = await listTasks(b, newcomerKey, { limit: 200 });
+    expect(newcomerAfterReset.status, "newcomer key still valid after --reset").toBe(200);
+    expect((newcomerAfterReset.body as TaskListResponse).tasks).toEqual([]);
 
     // Re-seeding after reset is a normal full seed: succeeds and prints (and
     // rotates) both keys again.

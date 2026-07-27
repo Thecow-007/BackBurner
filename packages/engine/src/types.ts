@@ -19,6 +19,15 @@ export interface WorkerResult {
 
 export interface WorkerContext {
   signal: AbortSignal;
+  /**
+   * 1-based attempt number for this claim. [EXTENSION] Identical to the
+   * `attempt` the engine journals onto the `running` transition for the same
+   * claim, so what a worker sees and what the history endpoint reports can
+   * never diverge.
+   */
+  attempt: number;
+  /** The task's attempt budget (`max_attempts`). [EXTENSION] */
+  maxAttempts: number;
 }
 
 export type Worker = (job: Job, ctx: WorkerContext) => Promise<WorkerResult>;
@@ -75,6 +84,19 @@ export interface ListFilters {
   sort?: string;
   limit?: number;
   cursor?: string;
+  /**
+   * [EXTENSION] Raw `?uncollected=` value. The only accepted value is the
+   * string `"true"`; anything else is a `ValidationError`. When present the
+   * read is restricted to `status IN ('ready','failed') AND collected = false`
+   * — deliberately the exact predicate behind `counts.uncollected`.
+   */
+  uncollected?: string;
+  /**
+   * [EXTENSION] Raw `?q=` free-text lookup over handle and id. 1-64 chars
+   * after trimming. Rank-ordered and unpaginated; conflicts with `sort` and
+   * `cursor` (api-contract §7).
+   */
+  q?: string;
 }
 
 /**

@@ -4,7 +4,14 @@
  */
 export { createEngine } from "./engine.js";
 export { InvalidStateError, NotFoundError, UnknownLaneError, ValidationError } from "./errors.js";
-export { createMockWorker, normalizeMockParams, randomDurationMs } from "./worker.js";
+export {
+  MOCK_DEFAULT_DURATION_RANGE,
+  MOCK_LONG_DURATION_RANGE,
+  createMockWorker,
+  normalizeMockParams,
+  randomDurationMs,
+} from "./worker.js";
+export type { DurationRange } from "./worker.js";
 
 export type {
   BackoffOptions,

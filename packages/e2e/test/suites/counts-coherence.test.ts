@@ -32,14 +32,15 @@ import {
  * `status` alone, `lane` alone, `status`+`lane`, and a `from`/`to` window.
  * The subtlety is that the six fields do NOT share one filter basis:
  *
- * | Field         | Respects            | Ignores      |
- * |---------------|---------------------|--------------|
- * | `all`         | from, to            | status, lane |
- * | `matching`    | every active filter | nothing      |
- * | `uncollected` | lane, from, to      | status       |
- * | `status.*`    | lane, from, to      | status       |
- * | `lane.*`      | status, from, to    | lane         |
- * | `lanes`       | nothing — engine lane REGISTRATION, not data |
+ * | Field           | Respects                       | Ignores      |
+ * |-----------------|--------------------------------|--------------|
+ * | `all`           | from, to                       | status, lane, uncollected, q |
+ * | `matching`      | every active filter            | nothing      |
+ * | `uncollected`   | lane, from, to                 | status, uncollected, q |
+ * | `status.*`      | lane, from, to, uncollected, q | status       |
+ * | `lane.*`        | status, from, to, uncollected, q | lane        |
+ * | `lanes`         | nothing — engine lane REGISTRATION, not data |
+ * | `lane_defaults` | nothing — mock-worker metadata, added by the API |
  *
  * ── Canonical supplemental-suite lifecycle (test-plan.md §3.1-§3.2) ──
  * One server per FILE (spawned in `beforeAll`, stopped in `afterAll`).
@@ -92,7 +93,18 @@ describe("counts-coherence", () => {
   const BLOCKER_MS = 30_000;
 
   const ALL_STATUSES: readonly TaskStatus[] = ["queued", "running", "ready", "failed", "cancelled"];
+  /** Every REGISTERED lane, in registration order (api-contract §1). The
+   * corpus below only populates the first two; the other three must still
+   * appear, zero-valued, in `counts.lane` and in `counts.lanes`. */
+  const REGISTERED_LANES = ["scrape", "report", "convert", "build", "test"] as const;
+  /** The two lanes the corpus actually uses. */
   const LANES = ["scrape", "report"] as const;
+  /** `counts.lane` zero-filled for the unused lanes, for `toEqual` comparisons. */
+  function laneTotals(populated: Record<string, number>): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const lane of REGISTERED_LANES) out[lane] = populated[lane] ?? 0;
+    return out;
+  }
 
   /** The corpus, hand-counted. Every expectation below is derived from these
    * numbers, so a drift in construction fails loudly rather than quietly
@@ -271,10 +283,15 @@ describe("counts-coherence", () => {
       expect(typeof counts.status[s], `${label}: status.${s} is a number`).toBe("number");
     }
     // One key per registered lane, and the registration list itself.
-    expect(counts.lanes, `${label}: lanes`).toEqual([...LANES]);
-    for (const lane of LANES) {
+    expect(counts.lanes, `${label}: lanes`).toEqual([...REGISTERED_LANES]);
+    for (const lane of REGISTERED_LANES) {
       expect(typeof counts.lane[lane], `${label}: lane.${lane} is a number`).toBe("number");
     }
+    // `lane_defaults` rides along on every 200, one entry per registered
+    // lane, and is filter-invariant like `lanes` (api-contract §6.2).
+    expect(Object.keys(counts.lane_defaults), `${label}: lane_defaults keys`).toEqual([
+      ...REGISTERED_LANES,
+    ]);
   }
 
   function uncollectedIn(tasks: TaskObject[]): number {
@@ -300,7 +317,7 @@ describe("counts-coherence", () => {
     // The sidebar's "All" row renders this sum — it must be exact.
     expect(sum(body.counts.status)).toBe(body.counts.all);
 
-    expect(body.counts.lane).toEqual(EXPECTED.lane);
+    expect(body.counts.lane).toEqual(laneTotals(EXPECTED.lane));
     expect(sum(body.counts.lane)).toBe(body.counts.all);
 
     // `uncollected` against a hand-counted set, and against the rows.
@@ -362,7 +379,7 @@ describe("counts-coherence", () => {
       expect(body.counts.all, `${lane}: all unchanged`).toBe(EXPECTED.total);
       // `lane.*` ignores the lane filter, so the sidebar's lane list keeps
       // showing every lane's total while one lane is selected.
-      expect(body.counts.lane, `${lane}: lane.* unchanged`).toEqual(EXPECTED.lane);
+      expect(body.counts.lane, `${lane}: lane.* unchanged`).toEqual(laneTotals(EXPECTED.lane));
 
       // `status.*` and `uncollected` DO respect lane.
       expect(body.counts.status, `${lane}: status.*`).toEqual(EXPECTED.byLaneStatus[lane]);
@@ -418,7 +435,7 @@ describe("counts-coherence", () => {
     expect(bracket.counts.all).toBe(EXPECTED.total);
     expect(bracket.counts.matching).toBe(bracket.tasks.length);
     expect(bracket.counts.status).toEqual(EXPECTED.status);
-    expect(bracket.counts.lane).toEqual(EXPECTED.lane);
+    expect(bracket.counts.lane).toEqual(laneTotals(EXPECTED.lane));
     expect(bracket.counts.uncollected).toBe(EXPECTED.uncollected);
 
     // An empty window zeroes every number — but still carries all five
@@ -430,7 +447,7 @@ describe("counts-coherence", () => {
     expect(empty.counts.matching).toBe(0);
     expect(empty.counts.uncollected).toBe(0);
     expect(empty.counts.status).toEqual({ queued: 0, running: 0, ready: 0, failed: 0, cancelled: 0 });
-    expect(empty.counts.lane).toEqual({ scrape: 0, report: 0 });
+    expect(empty.counts.lane).toEqual(laneTotals({}));
 
     // Half-open `[from, to)` on a boundary taken from real data: the two
     // complementary windows are disjoint and cover the register exactly.
@@ -520,12 +537,124 @@ describe("counts-coherence", () => {
     expect(body.counts.matching).toBe(0);
     expect(body.counts.uncollected).toBe(0);
     expect(body.counts.status).toEqual({ queued: 0, running: 0, ready: 0, failed: 0, cancelled: 0 });
-    expect(body.counts.lane).toEqual({ scrape: 0, report: 0 });
-    expect(body.counts.lanes).toEqual([...LANES]);
+    expect(body.counts.lane).toEqual(laneTotals({}));
+    expect(body.counts.lanes).toEqual([...REGISTERED_LANES]);
 
     // ALICE's own register is unaffected by BOB's empty one.
     const mine = await list();
     expect(mine.counts.all).toBe(1);
-    expect(mine.counts.lanes).toEqual([...LANES]);
+    expect(mine.counts.lanes).toEqual([...REGISTERED_LANES]);
+  });
+
+  // ── ?uncollected=true (api-contract §7, ADR 0022) ────────────────────
+
+  it("?uncollected=true returns exactly counts.uncollected rows, and that number never moves", async () => {
+    const cap = new EventCapture(server.baseUrl, ALICE.rawKey, { server });
+    await cap.ready;
+    await buildCorpus(cap);
+
+    const unfiltered = (await list()).counts;
+    const body = await list({ uncollected: "true" });
+    assertWellFormed(body.counts, "uncollected");
+
+    // The headline promise: the badge and the view it opens are the same
+    // predicate, so the number can never advertise rows the filter won't show.
+    expect(body.tasks.length, "rows").toBe(unfiltered.uncollected);
+    expect(body.tasks.length, "rows vs hand count").toBe(EXPECTED.uncollected);
+    expect(body.counts.matching, "matching").toBe(body.tasks.length);
+    expect(
+      body.tasks.every((t) => (t.status === "ready" || t.status === "failed") && !t.collected),
+      "every row is finished-but-uncollected"
+    ).toBe(true);
+
+    // `all` and `uncollected` ignore the filter — the register total does not
+    // move, and the badge does not collapse to itself when you click it.
+    expect(body.counts.all, "all unchanged").toBe(EXPECTED.total);
+    expect(body.counts.uncollected, "uncollected unchanged").toBe(EXPECTED.uncollected);
+
+    // `status.*` and `lane.*` DO respect it, and both partition the matching set.
+    expect(body.counts.status, "status.*").toEqual({
+      queued: 0,
+      running: 0,
+      ready: 2,
+      failed: 2,
+      cancelled: 0,
+    });
+    expect(sum(body.counts.status), "sum(status.*) === matching").toBe(body.counts.matching);
+    expect(body.counts.lane, "lane.*").toEqual(laneTotals(EXPECTED.uncollectedByLane));
+    expect(sum(body.counts.lane), "sum(lane.*) === matching").toBe(body.counts.matching);
+
+    cap.close();
+  });
+
+  it("?uncollected=true composes with ?status= and ?lane=, each number keeping its basis", async () => {
+    const cap = new EventCapture(server.baseUrl, ALICE.rawKey, { server });
+    await cap.ready;
+    await buildCorpus(cap);
+
+    // The uncollected slice, hand-counted from the corpus: 1 ready + 1 failed
+    // per lane, except scrape's second ready was collected.
+    const UNCOLLECTED_BY_LANE_STATUS = {
+      scrape: { queued: 0, running: 0, ready: 1, failed: 1, cancelled: 0 },
+      report: { queued: 0, running: 0, ready: 1, failed: 1, cancelled: 0 },
+    } as const;
+    const UNCOLLECTED_BY_STATUS = { queued: 0, running: 0, ready: 2, failed: 2, cancelled: 0 };
+
+    for (const status of ALL_STATUSES) {
+      const label = `uncollected+${status}`;
+      const body = await list({ uncollected: "true", status });
+      assertWellFormed(body.counts, label);
+
+      expect(body.tasks.length, `${label}: rows`).toBe(UNCOLLECTED_BY_STATUS[status]);
+      expect(body.counts.matching, `${label}: matching`).toBe(body.tasks.length);
+      // status.* ignores `status` but respects `uncollected`.
+      expect(body.counts.status, `${label}: status.*`).toEqual(UNCOLLECTED_BY_STATUS);
+      // all and the uncollected count still move for neither filter.
+      expect(body.counts.all, `${label}: all`).toBe(EXPECTED.total);
+      expect(body.counts.uncollected, `${label}: uncollected`).toBe(EXPECTED.uncollected);
+    }
+
+    for (const lane of LANES) {
+      const label = `uncollected+${lane}`;
+      const body = await list({ uncollected: "true", lane });
+      assertWellFormed(body.counts, label);
+
+      expect(body.tasks.length, `${label}: rows`).toBe(EXPECTED.uncollectedByLane[lane]);
+      expect(body.counts.matching, `${label}: matching`).toBe(body.tasks.length);
+      expect(body.tasks.every((t) => t.lane === lane), `${label}: row lanes`).toBe(true);
+      // status.* respects both lane and uncollected.
+      expect(body.counts.status, `${label}: status.*`).toEqual(UNCOLLECTED_BY_LANE_STATUS[lane]);
+      // lane.* ignores lane but respects uncollected.
+      expect(body.counts.lane, `${label}: lane.*`).toEqual(laneTotals(EXPECTED.uncollectedByLane));
+      // The uncollected COUNT respects lane (its documented basis) even
+      // though it ignores the uncollected filter.
+      expect(body.counts.uncollected, `${label}: uncollected`).toBe(
+        EXPECTED.uncollectedByLane[lane]
+      );
+
+      // All three together: the intersection, still self-consistent.
+      for (const status of ALL_STATUSES) {
+        const triple = await list({ uncollected: "true", lane, status });
+        const expected = UNCOLLECTED_BY_LANE_STATUS[lane][status];
+        expect(triple.tasks.length, `${label}+${status}: rows`).toBe(expected);
+        expect(triple.counts.matching, `${label}+${status}: matching`).toBe(expected);
+      }
+    }
+
+    cap.close();
+  });
+
+  it("?uncollected= rejects every value but the literal string true", async () => {
+    await submitTask("scrape", { duration_ms: QUEUED_MS });
+
+    for (const value of ["false", "1", "0", "TRUE", "True", "yes", ""]) {
+      const res = await listTasks(server.baseUrl, ALICE.rawKey, { uncollected: value });
+      expect(res.status, `uncollected=${JSON.stringify(value)}`).toBe(400);
+      expect((res.body as { error: { code: string } }).error.code).toBe("invalid_params");
+    }
+
+    // …and the one accepted value still works.
+    const ok = await listTasks(server.baseUrl, ALICE.rawKey, { uncollected: "true" });
+    expect(ok.status).toBe(200);
   });
 });

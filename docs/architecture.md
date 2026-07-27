@@ -151,6 +151,12 @@ CREATE UNIQUE INDEX one_active_handle ON tasks (user_id, lane, handle_num)
 CREATE INDEX dispatch_scan ON tasks (enqueued_at, id) WHERE status = 'queued';
 CREATE INDEX tasks_list ON tasks (user_id, created_at DESC);
 
+-- migration 0003 — the two GET /tasks extension filters (ADR 0022).
+CREATE INDEX tasks_uncollected ON tasks (user_id, created_at DESC)
+  WHERE status IN ('ready','failed') AND collected = false;
+CREATE INDEX tasks_handle_search
+  ON tasks (user_id, (lower(lane || '-' || handle_num::text)) text_pattern_ops);
+
 CREATE TABLE task_transitions (
   id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,  -- doubles as SSE event id / cursor
   task_id     uuid NOT NULL REFERENCES tasks(id),
@@ -167,7 +173,8 @@ CREATE INDEX transitions_by_user ON task_transitions (user_id, id);
 
 Commentary:
 
-- **`handle_num` is an integer, never a stored string.** The public handle `scrape-1` is derived at serialization (`lane || '-' || handle_num`). See §5.
+- **`handle_num` is an integer, never a stored string.** The public handle `scrape-1` is derived at serialization (`lane || '-' || handle_num`). See §5. `tasks_handle_search` indexes that same expression so `?q=` can look a handle up by equality or prefix without materialising a column that could drift from the derived value.
+- **`tasks_uncollected` indexes the uncollected predicate itself**, which is both the `counts.uncollected` basis and the `?uncollected=true` filter — one partial index serves the badge and the view it opens (ADR 0022).
 - **`enqueued_at` is the dispatch ordering key** and is reset every time a task enters `queued` — at submit, on retryable failure, on operator retry, and on boot re-queue. A retried task therefore rejoins the back of the line rather than jumping it. `dispatch_scan` is a partial index whose columns match the claim query's `ORDER BY enqueued_at, id` exactly.
 - **`run_after`** gates dispatch eligibility. It implements retry backoff today and gives a delayed-jobs feature (`run_at`) nearly for free later.
 - **`attempts` counts claims, not completions** — it is incremented the moment the dispatcher claims the row (§9).
@@ -334,7 +341,7 @@ WHERE id = (
 RETURNING *;
 ```
 
-Commit, broadcast the `running` event, register an `AbortController` in the engine's `Map<taskId, AbortController>`, then start the worker with `(job, { signal })`. Zero rows claimed means the queue is empty (or everything is waiting on `run_after`) and the pass stops. Workers execute; **they never own state** — every state write goes through the engine's CAS transitions, and the worker merely returns a `WorkerResult`.
+Commit, broadcast the `running` event, register an `AbortController` in the engine's `Map<taskId, AbortController>`, then start the worker with `(job, { signal, attempt, maxAttempts })` — the `attempt`/`maxAttempts` handed over are the very values this claim just journaled onto the `running` transition, so a worker and the history endpoint can never disagree about which attempt is running ([ADR 0021](./decisions/0021-flaky-outcomes-attempt-context-and-per-lane-durations.md)). Zero rows claimed means the queue is empty (or everything is waiting on `run_after`) and the pass stops. Workers execute; **they never own state** — every state write goes through the engine's CAS transitions, and the worker merely returns a `WorkerResult`.
 
 > [!NOTE]
 > **What `FOR UPDATE SKIP LOCKED` buys.** A plain `SELECT ... LIMIT 1` inside two concurrent claim transactions can pick the *same* row; the second transaction then blocks on the first's row lock and, after it commits, updates a row that is no longer `queued`. `FOR UPDATE` takes the row lock at selection time, and `SKIP LOCKED` tells the scan to *skip* any row someone else already holds rather than wait — so two concurrent claimers atomically receive two *different* tasks, with no blocking and no double-claim. A single BackBurner process does not strictly need this (the single-flight mutex already serializes claims in-process), and it costs nothing. But it means the claim query is already correct for N processes pointed at the same database: scaling out becomes a configuration change, not a redesign (§14).
@@ -384,7 +391,11 @@ type Worker = (job: Job) => Promise<WorkerResult>;
 BackBurner extends it additively — a documented extension:
 
 ```ts
-interface WorkerContext { signal: AbortSignal }
+interface WorkerContext {
+  signal: AbortSignal;
+  attempt: number;      // 1-based attempt number for this claim
+  maxAttempts: number;  // the task's attempt budget
+}
 type Worker = (job: Job, ctx: WorkerContext) => Promise<WorkerResult>;
 ```
 
@@ -393,12 +404,14 @@ Two things make this a safe extension rather than a contract change:
 - **A spec-shaped single-argument worker remains assignable and fully functional.** A function that ignores its second argument is a valid value of the extended type; the extra argument is simply ignored.
 - **The `ctx` parameter is forced by the spec's own requirements.** "A running worker must actually stop" when its job is cancelled — the abort signal has to reach the worker somehow, and a second parameter is the smallest possible conduit.
 
+`attempt` and `maxAttempts` were added to the same object on the same terms ([ADR 0021](./decisions/0021-flaky-outcomes-attempt-context-and-per-lane-durations.md)): a worker that must behave differently on a retry cannot otherwise know which attempt it is on, and inventing a number in `params` would be a client-supplied fiction. **They are the values the claim itself computed** — the same `attempts`/`max_attempts` read off the row the claim CAS returned, and the same two numbers written onto that claim's `running` transition `meta`. What the worker is told and what `GET /tasks/id/{id}/history` reports therefore agree by construction, not by coincidence.
+
 Contract semantics beyond the type:
 
 - A thrown non-Abort exception from any worker is a **retryable failure** with the exception message as the reason — a crash is treated as transient until proven otherwise.
 - A rejection with `AbortError` means the job was **cancelled**: the result is discarded, and no completion is recorded (§10).
 - The lane registry passed to `createEngine` is the `lanes` record of §2 — `Record<string, { worker: Worker; defaults?: { maxAttempts?: number } }>`. Workers plug in by appearing in that record; the engine contains zero lane-specific logic.
-- The mock worker backing the `scrape` and `report` lanes sleeps for `params.duration_ms`, fails retryably on `params.fail`, and fails non-retryably on `params.fail_permanent` — the trigger that exercises the spec's "job marked non-retryable" permanent-failure path end-to-end. Its omitted-duration behavior is pinned in [api-contract §1](./api-contract.md#1-conventions): a random 3000–15000 ms is chosen once at submit time and written into the stored `params.duration_ms`, so retries re-run the *same* duration and the task object shows what will actually happen.
+- The mock worker backs all five registered lanes (`scrape`, `report`, `convert`, `build`, `test`). It sleeps for `params.duration_ms`, fails retryably on `params.fail`, fails non-retryably on `params.fail_permanent` — the trigger that exercises the spec's "job marked non-retryable" permanent-failure path end-to-end — and fails retryably *while `ctx.attempt <= params.fail_times`*, succeeding after that, which is the flaky-then-recovers path ([ADR 0021](./decisions/0021-flaky-outcomes-attempt-context-and-per-lane-durations.md)). Precedence: `fail_permanent` > `fail` > `fail_times`; with none of them set the job always succeeds. Its omitted-duration behavior is pinned in [api-contract §1](./api-contract.md#1-conventions): a random duration from **the lane's own range** — 3000–15000 ms everywhere except `build`, which uses 20000–90000 ms — is chosen once at submit time and written into the stored `params.duration_ms`, so retries re-run the *same* duration and the task object shows what will actually happen. The range is per-lane; the *mechanism* is unchanged ([ADR 0017](./decisions/0017-mock-params-normalized-by-caller.md)), and neither lane names nor durations appear anywhere in engine-core.
 
 ## 9. Retries and failure
 
@@ -520,8 +533,9 @@ The spec's quality bar requires "real seed data — synthetic jobs in every stat
 
 - **An engine-internal seed module** — not on the public runtime surface (§2); only the seed script composes it — inserts backdated tasks with coherent synthetic transition timelines (each task's journal rows tell a plausible story at plausible intervals) and realistic per-lane params. Handles are allocated **through the real allocator**, so seeded active tasks can never violate `one_active_handle`: the invariant holds for synthetic data by the same mechanism that holds for real data.
 - **Target distribution** (normative — the seed script is verified against it): ≈70% `ready`+collected, 10% `cancelled`, 10% `failed`+collected (older, acknowledged), 5% `ready`+uncollected, 5% `failed`+uncollected (recent, actionable) — and **zero seeded `queued` or `running` rows**. This is a deliberate resolution of the quality bar's "every status": a seeded `running` row would be falsified by boot recovery on the next restart (§11 would re-queue or fail it), and a seeded `queued` row would be dispatched for real. The live statuses are demonstrated honestly, by real submissions, in seconds. The older `failed` cohort is seeded already collected — an operator would plausibly have acknowledged month-old failures by now — and those rows hold no handle, exactly like their `ready`+collected counterparts; only the recent `failed` cohort is left uncollected, actionable, and holding its handle.
-- **Users seeded:** `daniel` and `reviewer`. Raw API keys are printed exactly once, in the api's key format (`bb_` + 40 hex); only SHA-256 hashes are stored.
-- **The seed CLI** lives in `scripts/` and composes the engine seed module with the api package's user provisioning — the table-ownership rules of §3 hold even for seeding (the engine module writes `tasks`/`task_transitions`; the api's user module writes `users`). Defaults when flags are omitted: `--tasks 300`, `--to` the current date, `--from` three months earlier. `--reset` deletes seeded tasks and their transitions **only**, and upserts — never deletes — the seed users.
+- **Lanes and durations track the live registry.** Seeded tasks are spread across all five registered lanes, and seeded `build` tasks draw their durations from that lane's live 20000–90000 ms range ([ADR 0021](./decisions/0021-flaky-outcomes-attempt-context-and-per-lane-durations.md)) — a seeded corpus that contradicted live behaviour would teach a reader the wrong thing. A minority of the two `ready` cohorts carry a flaky journal (`running(1) → retrying(1) → running(2) → ready`, params `fail_times: 1`), so the recovery path appears in seeded history too. That is a *shape* within an existing bucket: the distribution above is unchanged.
+- **Users seeded:** `daniel`, `reviewer`, and `newcomer`. Raw API keys are printed exactly once for all three, in the api's key format (`bb_` + 40 hex); only SHA-256 hashes are stored. **`newcomer` deliberately receives no tasks at all** — it is the account that demonstrates every empty state (empty register, empty filtered view, zero-valued counts with the full lane list still present) on demand, against a real key, without anyone having to delete data to see them.
+- **The seed CLI** lives in `scripts/` and composes the engine seed module with the api package's user provisioning — the table-ownership rules of §3 hold even for seeding (the engine module writes `tasks`/`task_transitions`; the api's user module writes `users`). Defaults when flags are omitted: `--tasks 300`, `--to` the current date, `--from` three months earlier. `--reset` deletes seeded tasks and their transitions **only**, and ensures all three seed users exist without rotating any existing key — a reviewer holding a key from an earlier run keeps it.
 - **Seeded transitions are journaled but not replayed.** Synthetic transitions land in `task_transitions` so the history endpoint works for seeded tasks, but they are **excluded from `/events` replay** by a server-side filter ([api-contract §8](./api-contract.md#8-events-sse)): seeded tasks are historical, and a dashboard connecting with `?since=0` must never receive live completion notifications for jobs that "finished" weeks ago.
 
 Every seeded row carries `seeded = true`, surfaced through the API and badged in the UI.

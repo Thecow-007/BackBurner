@@ -13,36 +13,58 @@
  * transition, a value resolved by the API pre-submit is exactly as durable
  * and retry-deterministic as one resolved inside the engine would be —
  * without teaching engine-core anything about `duration_ms`/`fail`/
- * `fail_permanent`. This module is also usable directly against
+ * `fail_permanent`/`fail_times`. This module is also usable directly against
  * `createEngine`'s generic `submit()` for engine-level testing.
+ *
+ * The *range* an omitted `duration_ms` is drawn from is per-lane (ADR 0021):
+ * `build` is the long-running lane. The mechanism is unchanged from ADR 0017
+ * — the caller resolves the value once, at submit time — so the range is a
+ * caller-supplied argument here, and the lane -> range map lives with the
+ * lane registry in the API, not in engine-core.
  */
 import { ValidationError } from "./errors.js";
 import type { Job, Worker, WorkerContext, WorkerResult } from "./types.js";
 
 const MIN_DURATION_MS = 1;
 const MAX_DURATION_MS = 600000;
-const RANDOM_MIN_MS = 3000;
-const RANDOM_MAX_MS = 15000;
+const MIN_FAIL_TIMES = 1;
+const MAX_FAIL_TIMES = 9;
 
-export function randomDurationMs(rng: () => number = Math.random): number {
-  return Math.floor(rng() * (RANDOM_MAX_MS - RANDOM_MIN_MS + 1)) + RANDOM_MIN_MS;
+/** An inclusive `[min, max]` millisecond range for an omitted `duration_ms`. */
+export interface DurationRange {
+  min: number;
+  max: number;
+}
+
+/** The spec's range for an omitted `duration_ms` — every lane but `build`. */
+export const MOCK_DEFAULT_DURATION_RANGE: DurationRange = { min: 3000, max: 15000 };
+
+/** The long-running range, used by the `build` lane (ADR 0021). */
+export const MOCK_LONG_DURATION_RANGE: DurationRange = { min: 20000, max: 90000 };
+
+export function randomDurationMs(
+  rng: () => number = Math.random,
+  range: DurationRange = MOCK_DEFAULT_DURATION_RANGE
+): number {
+  return Math.floor(rng() * (range.max - range.min + 1)) + range.min;
 }
 
 /**
- * Validates `duration_ms`/`fail`/`fail_permanent` if present, and fills a
- * random `duration_ms` (chosen once, via `rng`) when omitted. Extra keys
- * pass through untouched. Never mutates the input object. Throws the
- * engine's `ValidationError` (-> 400 invalid_params at the API) on a bad
- * shape.
+ * Validates `duration_ms`/`fail`/`fail_permanent`/`fail_times` if present,
+ * and fills a random `duration_ms` (chosen once, via `rng`, from `range`)
+ * when omitted. Extra keys pass through untouched. Never mutates the input
+ * object. Throws the engine's `ValidationError` (-> 400 invalid_params at the
+ * API) on a bad shape.
  */
 export function normalizeMockParams(
   params: Record<string, unknown>,
-  rng: () => number = Math.random
+  rng: () => number = Math.random,
+  range: DurationRange = MOCK_DEFAULT_DURATION_RANGE
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...params };
 
   if (out.duration_ms === undefined) {
-    out.duration_ms = randomDurationMs(rng);
+    out.duration_ms = randomDurationMs(rng, range);
   } else {
     const d = out.duration_ms;
     if (typeof d !== "number" || !Number.isInteger(d) || d < MIN_DURATION_MS || d > MAX_DURATION_MS) {
@@ -57,6 +79,14 @@ export function normalizeMockParams(
   }
   if (out.fail_permanent !== undefined && typeof out.fail_permanent !== "boolean") {
     throw new ValidationError("params.fail_permanent must be a boolean");
+  }
+  if (out.fail_times !== undefined) {
+    const n = out.fail_times;
+    if (typeof n !== "number" || !Number.isInteger(n) || n < MIN_FAIL_TIMES || n > MAX_FAIL_TIMES) {
+      throw new ValidationError(
+        `params.fail_times must be an integer between ${MIN_FAIL_TIMES} and ${MAX_FAIL_TIMES}`
+      );
+    }
   }
 
   return out;
@@ -91,11 +121,16 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * The mock worker backing the `scrape` and `report` lanes. Races its sleep
- * against `ctx.signal` so cancellation stops it promptly. If
- * `duration_ms` was somehow never normalized before submit (bypassing
- * `normalizeMockParams`), it falls back to a fresh random duration here —
- * a defensive fallback outside the primary, deterministic-retry path.
+ * The mock worker backing every registered lane. Races its sleep against
+ * `ctx.signal` so cancellation stops it promptly. If `duration_ms` was
+ * somehow never normalized before submit (bypassing `normalizeMockParams`),
+ * it falls back to a fresh random duration here — a defensive fallback
+ * outside the primary, deterministic-retry path.
+ *
+ * Outcome precedence is fixed and documented: `fail_permanent` wins over
+ * `fail`, which wins over `fail_times`. With none of them set the worker
+ * always succeeds — the default outcome is deterministic, never a
+ * server-side dice roll.
  */
 export function createMockWorker(): Worker {
   return async (job: Job, ctx: WorkerContext): Promise<WorkerResult> => {
@@ -118,6 +153,26 @@ export function createMockWorker(): Worker {
       return {
         status: "failed",
         error: { reason: "mock failure requested via params.fail", retryable: true },
+      };
+    }
+
+    // Flaky: fail while the attempt number is within the requested budget,
+    // succeed on every attempt after it. `ctx.attempt` is the same 1-based
+    // number the engine journals onto this claim's `running` transition, so
+    // the reason text below can be checked against the history endpoint.
+    const failTimes = job.params.fail_times;
+    if (
+      typeof failTimes === "number" &&
+      Number.isInteger(failTimes) &&
+      failTimes >= MIN_FAIL_TIMES &&
+      ctx.attempt <= failTimes
+    ) {
+      return {
+        status: "failed",
+        error: {
+          reason: `mock flaky failure: attempt ${ctx.attempt} of ${failTimes} scheduled to fail via params.fail_times`,
+          retryable: true,
+        },
       };
     }
 

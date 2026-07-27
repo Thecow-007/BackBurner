@@ -42,6 +42,12 @@ export interface ErrorEnvelope {
   };
 }
 
+/** A lane's `[min, max]` range for an omitted `params.duration_ms`
+ * (api-contract §1, §6.2's `lane_defaults`). */
+export interface LaneDurationDefault {
+  duration_ms: { min: number; max: number };
+}
+
 /** The `counts` object on the list envelope (api-contract §6.2,
  * [EXTENSION]). Every field has its own filter basis — see the contract. */
 export interface TaskCounts {
@@ -51,6 +57,8 @@ export interface TaskCounts {
   status: Record<TaskStatus, number>;
   lane: Record<string, number>;
   lanes: string[];
+  /** One entry per mock-worker-backed lane, in registration order. */
+  lane_defaults: Record<string, LaneDurationDefault>;
 }
 
 /** `GET /tasks` response envelope (api-contract §6.2). */
@@ -86,6 +94,11 @@ export interface ListQuery {
   sort?: string;
   limit?: number | string;
   cursor?: string;
+  /** `?uncollected=` — the only valid value is the string `"true"`; the
+   * validation suite deliberately sends others. */
+  uncollected?: string;
+  /** `?q=` free-text handle/id lookup. */
+  q?: string;
 }
 
 export interface ApiResponse<T> {

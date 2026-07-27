@@ -69,11 +69,19 @@ export function parseSubmitBody(raw: unknown): ParsedSubmitBody {
 }
 
 /** `GET /tasks` querystring (api-contract §7). Deliberately permissive on
- * unknown query keys (no `additionalProperties: false`) — only the five
- * declared fields are ever read out of `request.query` by the route
- * handler, so stray keys are harmless. Fastify's default ajv coercion
- * (`coerceTypes: 'array'`) turns the querystring's string `limit` into a
- * number before this schema's `minimum`/`maximum` apply. */
+ * unknown query keys (no `additionalProperties: false`) — only the declared
+ * fields are ever read out of `request.query` by the route handler, so stray
+ * keys are harmless. Fastify's default ajv coercion (`coerceTypes: 'array'`)
+ * turns the querystring's string `limit` into a number before this schema's
+ * `minimum`/`maximum` apply.
+ *
+ * `uncollected` and `q` are declared as plain strings and validated in the
+ * engine's shared `filters.ts` rather than here, because `list()` and
+ * `counts()` must read them identically and `q`'s two mutual exclusions
+ * (`sort`, `cursor`) are cross-field rules a per-property schema cannot
+ * express. Note `uncollected` is NOT declared as a boolean: ajv coercion
+ * would silently turn `?uncollected=false` into "filter off" instead of the
+ * `400` §7 requires. */
 export const listQuerySchema = {
   type: "object",
   properties: {
@@ -84,5 +92,7 @@ export const listQuerySchema = {
     sort: { type: "string" },
     limit: { type: "integer", minimum: 1, maximum: 200 },
     cursor: { type: "string" },
+    uncollected: { type: "string" },
+    q: { type: "string" },
   },
 } as const;

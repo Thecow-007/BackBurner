@@ -41,7 +41,7 @@ sleeps inside the mock worker. Determinism comes from event-driven waiting and e
 | Suite | Package | Files | Runs against |
 |---|---|---|---|
 | Criteria (spec §Success criteria, 1:1) | `packages/e2e` | `test/criteria/criterion-01…09.test.ts` | spawned API child process + test DB |
-| Supplemental e2e | `packages/e2e` | `test/suites/*.test.ts` (11 files) | spawned API child process + test DB |
+| Supplemental e2e | `packages/e2e` | `test/suites/*.test.ts` (14 files) | spawned API child process + test DB |
 | Engine unit | `packages/engine` | `test/*.test.ts` | in-process; pure + DB-backed |
 
 Vitest is the only runner. The e2e package runs with `fileParallelism: false` (one server + one
@@ -113,8 +113,16 @@ sequenceDiagram
   the dev compose Postgres at `localhost:5432`, user/password `postgres`). PostgreSQL 18 is
   required (`uuidv7()`).
 - **Global setup** (vitest `globalSetup`): connect to the server's `postgres` maintenance DB,
-  `CREATE DATABASE` if missing, then run the repository migration runner
-  (`node scripts/migrate.mjs`) against the test DB. Idempotent; safe on every run.
+  `CREATE DATABASE` if missing, run the repository migration runner (`node scripts/migrate.mjs`)
+  against the test DB, then **truncate it**. Idempotent; safe on every run.
+  The truncation is not redundant with the per-test reset below, and it is a §9 rule 1 fix rather
+  than tidiness. Criteria files truncate *before* spawning their server; supplemental files spawn
+  one server per file in `beforeAll` and truncate only in `beforeEach` — so the first supplemental
+  server of a run boots against whatever the *previous* run left behind (`npm run test:criteria`
+  reliably ends with one `running` row). Boot recovery correctly re-queues that row and the
+  dispatcher claims it, so a worker slot is held by a task whose row the next `beforeEach` then
+  truncates away; at `WORKER_CONCURRENCY=1` the file's first real job waits seconds for a phantom,
+  and the new server's log shows nothing at all. Every run therefore starts from an empty database.
 - **Per-test reset** (`beforeEach`): `TRUNCATE task_transitions, tasks RESTART IDENTITY CASCADE;`
   then upsert the two test users (§3.3). Truncation runs only while no server owns in-flight jobs:
   the criteria suite spawns a fresh server per test *after* truncation; supplemental suites keep
@@ -655,8 +663,8 @@ Collection is the one GET with a side effect, so it gets its own suite beyond th
 Runs the real seed CLI as a child process against the test DB, then verifies through the API only:
 
 1. `npm run seed -- --tasks 50 --from 2026-04-01 --to 2026-07-01` → exit 0; stdout contains one
-   line per seeded user matching `/^(daniel|reviewer): (bb_[0-9a-f]{40})$/` — the raw keys, printed
-   once.
+   line per seeded user matching `/^(daniel|reviewer|newcomer): (bb_[0-9a-f]{40})$/` — the raw
+   keys, printed once. All **three** lines must be present.
 2. Using the parsed `reviewer` key: `GET /tasks?limit=200` → tasks exist; **every** task has
    `seeded: true`; statuses only from {`ready` (collected and uncollected), `failed` (collected
    and uncollected), `cancelled`} — **zero** seeded `queued` or `running` rows (a seeded in-flight
@@ -665,12 +673,19 @@ Runs the real seed CLI as a child process against the test DB, then verifies thr
    `failed`+collected (older, acknowledged), `failed`+uncollected (recent, actionable), and
    `cancelled` — a seeder that produces a 100 %-collected corpus, or one whose failed cohort is
    never actionable, must fail this test. The target distribution is documented in
-   architecture.md's seed-data section.
+   architecture.md's seed-data section. Every registered lane appears in the seeded corpus, and
+   every seeded `build` task's `duration_ms` is inside that lane's live 20000-90000 ms range — a
+   seeded corpus that contradicted live behaviour would teach a reader the wrong thing.
+2b. Using the parsed `newcomer` key: `GET /tasks?limit=200` → `200` with an **empty** task list,
+   `counts.all === counts.matching === counts.uncollected === 0`, and the full registered-lane
+   list still present. `newcomer` is provisioned with a working key and deliberately given zero
+   tasks so every empty state can be demonstrated on demand (architecture.md §12).
 3. Live-data coexistence: submit a real task in a seeded lane → `201`, handle allocation succeeds
    (seeded active tasks went through the real allocator, so no unique-index collision), and the
    new task has `seeded: false`.
-4. `npm run seed -- --reset` → the real task from step 3 survives; all seeded tasks are gone.
-   Re-seeding after reset succeeds (idempotent lifecycle).
+4. `npm run seed -- --reset` → the real task from step 3 survives; all seeded tasks are gone; the
+   `reviewer` and `newcomer` keys captured in step 1 are both still valid (reset ensures the seed
+   users exist without rotating keys). Re-seeding after reset succeeds (idempotent lifecycle).
 
 ### 5.10 `non-retryable-failure`
 
@@ -693,13 +708,17 @@ proves "a job marked non-retryable":
 
 ### 5.11 `counts-coherence`
 
-The `counts` object on `GET /tasks` (api-contract §6.2, [ADR 0018](./decisions/0018-task-counts-on-list-response.md)). The
+The `counts` object on `GET /tasks` (api-contract §6.2, [ADR 0018](./decisions/0018-task-counts-on-list-response.md)), and the
+`?uncollected=true` filter that opens one of its numbers ([ADR 0022](./decisions/0022-uncollected-and-search-list-filters.md)). The
 rule under test is an honesty rule — **a count must always match the list it opens** — complicated
-by the fact that the six fields do not share one filter basis (`all` ignores `status`/`lane`;
-`status.*` ignores `status`; `lane.*` ignores `lane`; `matching` respects everything; `lanes`
-ignores all of it). Spawned with `WORKER_CONCURRENCY: "1"` and the same blocker-held corpus
-discipline as §5.6: 12 tasks — 4 `queued`, 1 `running`, 3 `ready` (one collected), 2 `failed`,
-2 `cancelled`; 7 scrape, 5 report — rebuilt per test, so every total is hand-countable.
+by the fact that the seven fields do not share one filter basis (`all` ignores `status`/`lane`;
+`status.*` ignores `status`; `lane.*` ignores `lane`; `matching` respects everything; the
+`uncollected` count ignores `status` *and the `uncollected` filter*, because it is that predicate;
+`lanes` and `lane_defaults` ignore all of it). Spawned with `WORKER_CONCURRENCY: "1"` and the same
+blocker-held corpus discipline as §5.6: 12 tasks — 4 `queued`, 1 `running`, 3 `ready` (one
+collected), 2 `failed`, 2 `cancelled`; 7 scrape, 5 report — rebuilt per test, so every total is
+hand-countable. The other three registered lanes carry no corpus tasks and must still appear,
+zero-valued, in `counts.lane`.
 
 1. **No filter**: `all === matching ===` the row count; `status.*` equals the hand-counted
    breakdown and `sum(status.*) === all` (the sidebar's "All" row renders that sum);
@@ -718,9 +737,91 @@ discipline as §5.6: 12 tasks — 4 `queued`, 1 `running`, 3 `ready` (one collec
    (`before.all + after.all === all`), and inside each window every basis still holds.
 6. **Cursor pages**: `counts` is present on every page of a `limit=5` chain and is identical page
    to page — `matching` is the whole matching set, never a page-local tally.
-7. **A user with zero tasks** still receives `lanes: ["scrape","report"]` (registration, not
+7. **A user with zero tasks** still receives the full registered-lane list (registration, not
    `SELECT DISTINCT lane`) and an all-zero, fully-keyed `counts` object, while the other user's
    register is unaffected — counts are per-user like every other read.
+8. **`?uncollected=true` alone**: the rows returned are *exactly* `counts.uncollected` of the
+   unfiltered response, and every one of them is `ready`/`failed` and uncollected; `matching`
+   equals the row count; `all` and the `uncollected` count are both unchanged; `status.*` and
+   `lane.*` narrow to the slice and each sums to `matching`.
+9. **`?uncollected=true` combined with `?status=` and `?lane=`**, every combination including the
+   three-way one: rows === `matching` throughout; `status.*` still ignores `status` while
+   respecting `uncollected`; `lane.*` still ignores `lane`; the `uncollected` count respects
+   `lane` (its documented basis) while ignoring the filter named after it.
+10. **Rejected values**: `uncollected=` `false`/`1`/`0`/`TRUE`/`True`/`yes`/empty → `400`
+    `invalid_params` each; only the literal string `true` is accepted (api-contract §7's rule that
+    an invalid value is never silently ignored or clamped).
+
+### 5.12 `flaky-outcomes`
+
+`params.fail_times` and the attempt-aware worker context ([ADR 0021](./decisions/0021-flaky-outcomes-attempt-context-and-per-lane-durations.md)).
+Baseline env (`BACKOFF_BASE_MS=100`), one server per file.
+
+1. **`fail_times: 1`** -> the stream carries `retrying` (reason
+   `"mock flaky failure: attempt 1 of 1 scheduled to fail via params.fail_times"`) and then
+   `ready`, with **no** `failed` event anywhere; the final task is `ready` with `attempts: 2`,
+   `error: null`, and `result.slept_ms === duration_ms`; the history endpoint shows exactly
+   `accepted -> running(attempt 1) -> retrying(attempt 1) -> running(attempt 2) -> ready`. The
+   worker's own reason text names attempt 1 and the engine journalled attempt 1 for the same
+   claim — the cross-check that makes `ctx.attempt` observable from outside.
+2. **`fail_times: 2`** -> two `retrying` hops, each naming its own attempt number, then `ready` on
+   attempt 3.
+3. **`fail_times` at or above the budget** (`fail_times: 3`, `max_attempts: 2`) -> the task
+   exhausts its budget and lands in `failed` with `attempts: 2` and `retryable: true` — the budget
+   ran out, not the possibility of success, which is what keeps the operator-retry offer honest.
+4. **Precedence**: `fail_permanent` beats `fail_times` (one attempt, `retryable: false`); `fail`
+   beats `fail_times` (fails on every attempt, so the recovery never happens).
+5. **Validation**: `fail_times` of `0`, `10`, `-1`, `1.5`, `"1"`, `true`, `null` -> `400`
+   `invalid_params` each; `1` and `9` -> `201` with the value echoed in stored params.
+6. **The default outcome stays deterministic**: five submits carrying only `duration_ms` all reach
+   `ready` with zero `failed` and zero `retrying` events, and none of them acquires an outcome
+   param it was not given. Adding a flaky *outcome* must never make the *default* outcome flaky.
+
+### 5.13 `lane-registry`
+
+The five registered lanes and their per-lane defaults (api-contract §1, §6.2's `lane_defaults`,
+[ADR 0021](./decisions/0021-flaky-outcomes-attempt-context-and-per-lane-durations.md)).
+
+1. `counts.lanes` is exactly `["scrape","report","convert","build","test"]` — order is contract,
+   because it is the order the sidebar and submit picker render. Each lane accepts a submit and
+   numbers independently from 1 (`<lane>-1`). An unregistered lane is still `400 unknown_lane`.
+2. `counts.lane_defaults` carries one entry per lane with that lane's real range — 3000-15000 for
+   four of them, **20000-90000 for `build`** — its keys are in the same order as `counts.lanes`,
+   and it is filter-invariant.
+3. An omitted `duration_ms` lands inside the submitted lane's own range and is written into the
+   **stored** params: six `build` submits are all inside 20000-90000 (disjoint from the default
+   range, so a lane mix-up cannot hide behind an overlap), and the values echoed by a later list
+   are the same values the creation responses carried — resolved once, not re-rolled per read.
+4. An explicit `duration_ms` is honoured on `build` too, and extra params keys still pass through
+   untouched.
+
+### 5.14 `list-search`
+
+The `?q=` free-text lookup ([ADR 0022](./decisions/0022-uncollected-and-search-list-filters.md)).
+Corpus (15 tasks, rebuilt per test): `convert-1` ready+uncollected; `report-1` ready+**collected**
+(a released former holder); a second `report-1` still holding the recycled handle; and `scrape-1`
+through `scrape-12`, all long-running so they provably still hold their handles.
+
+1. **Matching set**: `q=scrape` -> all 12 scrapes; `q=scrape-1` -> `scrape-1`, `scrape-10`,
+   `scrape-11`, `scrape-12`; `q=scrape-12` -> one row; an exact id -> one row; an id prefix -> the
+   target plus only rows sharing that prefix; `SCRAPE-12` and an upper-cased id match too
+   (case-insensitive); a miss is an empty list, not a `404`.
+2. **LIKE metacharacters are literal**: `scrape-%`, `%`, `_`, `scrape_1` and a trailing backslash
+   all match **nothing**. Unescaped, the first two would return the whole register.
+3. **User scoping**: Bob's `?q=` cannot see Alice's tasks, not even by her task's immutable id.
+4. **Ranking**, all three tiers: `q=scrape-1` returns the exact match first and then the prefix
+   matches newest-first; `q=scrape` (no exact match) is purely newest-first; `q=report-1` returns
+   both holders with the **active** one first — and the released one is the older row, so this is
+   not `created_at` ordering wearing a disguise.
+5. **Unpaginated**: `next_cursor` is `null` whether or not rows were truncated; `?q=scrape&limit=5`
+   returns the top 5 of the same ranking while `counts.matching` still reports 12; `as_of` still
+   rides along so snapshot-then-stream hydration works from a search result.
+6. **Composition** with `status`, `lane`, `uncollected`, and a `from`/`to` window.
+7. **Count bases under `q`**: `matching`, `status.*` and `lane.*` narrow to the search; `all`,
+   `uncollected`, `lanes` and `lane_defaults` do not.
+8. **Refusals**: `q` + a real `cursor` -> `400` naming the cursor conflict; `q` + any `sort` ->
+   `400` naming the sort conflict; `q` empty, whitespace-only, or 65 chars -> `400`; 64 chars is
+   accepted, and surrounding whitespace is trimmed rather than counted.
 
 ---
 
