@@ -24,3 +24,17 @@ services:
       - postgres
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/backburner_dev
+      # The test harnesses default to localhost:5432 (test-plan.md §3.2), which
+      # is correct on a developer machine where compose publishes the port —
+      # and wrong here, where Postgres is a sibling container reachable only by
+      # service name. Without these, `npm test` in a Codespace dies with
+      # ECONNREFUSED 127.0.0.1:5432 while every other documented command works,
+      # which is a confusing way to discover that the test suite was never
+      # runnable in the environment the spec requires it to run in.
+      #
+      # These are the exact override variables test-plan.md §8 documents for
+      # pointing the suites at a non-default server; the devcontainer simply
+      # has to set them. Each harness still creates and migrates its own
+      # database, so dev data is untouched.
+      ENGINE_TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/backburner_test_engine
+      E2E_DATABASE_URL: postgres://postgres:postgres@postgres:5432/backburner_test_e2e
