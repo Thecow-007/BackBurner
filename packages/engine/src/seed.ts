@@ -479,9 +479,10 @@ export async function resetSeeded(pool: Pool): Promise<void> {
 /**
  * Seed synthetic tasks. Clears existing seeded rows first (idempotent), then
  * inserts `total` tasks split evenly across `userIds`, each user's share
- * distributed across the five categories. One transaction per task, so each
- * `nextHandleNum` sees prior committed active rows — active seeded tasks
- * therefore receive collision-free handles exactly as real submits do.
+ * distributed across the five categories, inserted oldest-first. One
+ * transaction per task, so each `nextHandleNum` sees prior committed active
+ * rows — active seeded tasks therefore receive collision-free handles exactly
+ * as real submits do, and in the order real submits would have produced them.
  */
 export async function seedTasks(pool: Pool, options: SeedOptions): Promise<SeedSummary> {
   const rng = options.rng ?? Math.random;
@@ -512,21 +513,29 @@ export async function seedTasks(pool: Pool, options: SeedOptions): Promise<SeedS
     const share = u === 0 ? total - base * (nUsers - 1) : base;
     const counts = categoryCounts(share);
 
-    // Build a flat, shuffled list of categories for this user so handle
-    // numbers interleave the way real traffic would.
     const plan: Category[] = [];
     for (const [category, count] of Object.entries(counts) as [Category, number][]) {
       for (let i = 0; i < count; i++) plan.push(category);
     }
-    for (let i = plan.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      [plan[i], plan[j]] = [plan[j]!, plan[i]!];
-    }
 
-    for (const category of plan) {
+    // Materialize every task before inserting any of them, then insert in
+    // `created_at` order. This ordering is load-bearing, not tidiness: handles
+    // are allocated at *insert* time by `nextHandleNum`, which reads the rows
+    // already committed. Inserting in plan order therefore numbers tasks by
+    // insertion rather than by when they were created, and since each
+    // `created_at` is drawn independently at random, the two are uncorrelated —
+    // a 90-day-old task could hold `test-5` while an 83-day-old one holds
+    // `test-1`. Real traffic can never produce that, so a reviewer scrolling to
+    // the oldest rows would be reading a history that contradicts the allocator
+    // the rest of the system is judged on. Sorting first makes the seeded
+    // corpus allocate exactly as the traffic it imitates would have.
+    const planned = plan.map((category) => {
       const lane = pick(rng, LANES);
-      const createdAt = createdAtFor(category, from, to, rng);
-      const spec = buildTaskSpec(category, rng, lane);
+      return { category, lane, createdAt: createdAtFor(category, from, to, rng), spec: buildTaskSpec(category, rng, lane) };
+    });
+    planned.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    for (const { category, lane, createdAt, spec } of planned) {
       await withTransaction(pool, (client) => insertSeededTask(client, userId, lane, createdAt, spec));
       summary.inserted += 1;
       summary.byCategory[category] += 1;
